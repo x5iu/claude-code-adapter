@@ -1,0 +1,449 @@
+package adapter
+
+import (
+	"fmt"
+
+	"github.com/samber/lo"
+	"github.com/spf13/viper"
+
+	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
+	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
+)
+
+func init() {
+	viper.SetDefault("strict", false)
+}
+
+type ConvertRequestOptions struct {
+	ModelMapper map[string]string
+}
+
+type ConvertRequestOption func(*ConvertRequestOptions)
+
+func WithModelMapper(mapper map[string]string) ConvertRequestOption {
+	return func(o *ConvertRequestOptions) {
+		o.ModelMapper = mapper
+	}
+}
+
+func ConvertAnthropicRequestToOpenRouterRequest(
+	src *anthropic.GenerateMessageRequest,
+	options ...ConvertRequestOption,
+) (dst *openrouter.CreateChatCompletionRequest) {
+	convertOptions := &ConvertRequestOptions{}
+	for _, applyOption := range options {
+		applyOption(convertOptions)
+	}
+	dst = &openrouter.CreateChatCompletionRequest{
+		Model:               src.Model,
+		MaxCompletionTokens: lo.ToPtr(src.MaxTokens),
+		MaxTokens:           lo.ToPtr(src.MaxTokens),
+		Temperature:         lo.ToPtr(src.Temperature),
+		TopK:                src.TopK,
+		TopP:                src.TopP,
+	}
+	if convertOptions.ModelMapper != nil {
+		if targetModel, ok := convertOptions.ModelMapper[dst.Model]; ok {
+			dst.Model = targetModel
+		}
+	}
+	if metadata := src.Metadata; metadata != nil && metadata.UserID != "" {
+		dst.User = metadata.UserID
+	}
+	if len(src.StopSequences) > 0 {
+		dst.Stop = src.StopSequences
+	}
+	if srcToolChoice := src.ToolChoice; srcToolChoice != nil {
+		dst.ParallelToolCalls = lo.ToPtr(!srcToolChoice.DisableParallelToolUse)
+		var dstToolChoice *openrouter.ChatCompletionToolChoice
+		switch srcToolChoice.Type {
+		case anthropic.ToolChoiceTypeTool:
+			dstToolChoice = &openrouter.ChatCompletionToolChoice{
+				Tool: &openrouter.ChatCompletionTool{
+					Type:     openrouter.ChatCompletionMessageToolCallTypeFunction,
+					Function: &openrouter.ChatCompletionFunction{Name: srcToolChoice.Name},
+				},
+			}
+		case anthropic.ToolChoiceTypeAuto:
+			dstToolChoice = &openrouter.ChatCompletionToolChoice{
+				Mode: openrouter.ChatCompletionToolChoiceTypeAuto,
+			}
+		case anthropic.ToolChoiceTypeNone:
+			dstToolChoice = &openrouter.ChatCompletionToolChoice{
+				Mode: openrouter.ChatCompletionToolChoiceTypeNone,
+			}
+		case anthropic.ToolChoiceTypeAny:
+			dstToolChoice = &openrouter.ChatCompletionToolChoice{
+				Mode: openrouter.ChatCompletionToolChoiceTypeRequired,
+			}
+		}
+		dst.ToolChoice = dstToolChoice
+	}
+	if len(src.Tools) > 0 {
+		dst.Tools = make([]*openrouter.ChatCompletionTool, 0, len(src.Tools))
+		for _, srcTool := range src.Tools {
+			var srcToolType anthropic.ToolType
+			// A custom tool can omit the type parameter, so we consider a tool with a null type value to be a custom tool.
+			// reference: https://docs.anthropic.com/en/api/messages#custom-tool
+			if srcTool.Type == nil {
+				srcToolType = anthropic.ToolTypeCustom
+			} else {
+				srcToolType = *srcTool.Type
+			}
+			switch srcToolType {
+			case anthropic.ToolTypeCustom:
+				dstTool := &openrouter.ChatCompletionTool{
+					Type: openrouter.ChatCompletionMessageToolCallTypeFunction,
+					Function: &openrouter.ChatCompletionFunction{
+						Name:        srcTool.Name,
+						Description: srcTool.Description,
+						Strict:      viper.GetBool("strict"),
+						Parameters:  openrouter.ChatCompletionJSONSchemaObject(srcTool.InputSchema),
+					},
+				}
+				if srcCacheControl := srcTool.CacheControl; srcCacheControl != nil {
+					// Anthropic's Tool supports the CacheControl parameter, but in OpenRouter's Tool definition we have not yet
+					// found a field for setting CacheControl. Therefore, we will temporarily ignore the CacheControl setting and add
+					// it in the future.
+				}
+				dst.Tools = append(dst.Tools, dstTool)
+			}
+		}
+	}
+	if thinking := src.Thinking; thinking != nil {
+		reasoning := &openrouter.ChatCompletionReasoning{
+			MaxTokens: thinking.BudgetTokens,
+		}
+		switch thinking.Type {
+		case anthropic.ThinkingTypeEnabled:
+			reasoning.Enabled = true
+		case anthropic.ThinkingTypeDisabled:
+			reasoning.Enabled = false
+		}
+		dst.Reasoning = reasoning
+	}
+	dstMessages := make([]*openrouterChatCompletionMessageWrapper, 0, len(src.Messages))
+	if len(src.System) > 0 {
+		dstSystemMessage := &openrouter.ChatCompletionMessage{
+			Role: openrouter.ChatCompletionMessageRoleSystem,
+			Content: &openrouter.ChatCompletionMessageContent{
+				Type:  openrouter.ChatCompletionMessageContentTypeParts,
+				Parts: make([]*openrouter.ChatCompletionMessageContentPart, 0, len(src.System)),
+			},
+		}
+		for _, systemContent := range src.System {
+			switch systemContent.Type {
+			case anthropic.MessageContentTypeText:
+				dstPart := &openrouter.ChatCompletionMessageContentPart{
+					Type: openrouter.ChatCompletionMessageContentPartTypeText,
+					Text: systemContent.Text,
+				}
+				if srcCacheControl := systemContent.CacheControl; srcCacheControl != nil {
+					dstPart.CacheControl = &openrouter.ChatCompletionMessageCacheControl{
+						Type: openrouter.ChatCompletionMessageCacheControlType(srcCacheControl.Type),
+						TTL:  openrouter.ChatCompletionMessageCacheControlTTL(srcCacheControl.TTL),
+					}
+				}
+				dstSystemMessage.Content.Parts = append(dstSystemMessage.Content.Parts, dstPart)
+			case anthropic.MessageContentTypeImage:
+				if srcSystemContentSource := systemContent.Source; srcSystemContentSource != nil {
+					dstPart := &openrouter.ChatCompletionMessageContentPart{
+						Type: openrouter.ChatCompletionMessageContentPartTypeImage,
+						ImageUrl: &openrouter.ChatCompletionMessageContentPartImageUrl{
+							Url: fmt.Sprintf("data:%s;%s,%s", srcSystemContentSource.MediaType, srcSystemContentSource.Type, srcSystemContentSource.Data),
+						},
+					}
+					if srcCacheControl := systemContent.CacheControl; srcCacheControl != nil {
+						dstPart.CacheControl = &openrouter.ChatCompletionMessageCacheControl{
+							Type: openrouter.ChatCompletionMessageCacheControlType(srcCacheControl.Type),
+							TTL:  openrouter.ChatCompletionMessageCacheControlTTL(srcCacheControl.TTL),
+						}
+					}
+					dstSystemMessage.Content.Parts = append(dstSystemMessage.Content.Parts, dstPart)
+				}
+			}
+		}
+		if len(dstSystemMessage.Content.Parts) > 0 {
+			dstMessages = append(dstMessages, &openrouterChatCompletionMessageWrapper{
+				ChatCompletionMessage: dstSystemMessage,
+			})
+		}
+	}
+	for _, srcMessage := range src.Messages {
+		var dstRole openrouter.ChatCompletionRole
+		switch srcMessage.Role {
+		case anthropic.MessageRoleUser:
+			dstRole = openrouter.ChatCompletionMessageRoleUser
+		case anthropic.MessageRoleAssistant:
+			dstRole = openrouter.ChatCompletionMessageRoleAssistant
+		}
+		for _, srcMessageContent := range srcMessage.Content {
+			switch srcMessageContent.Type {
+			case anthropic.MessageContentTypeThinking:
+				dstMessage := &openrouter.ChatCompletionMessage{
+					Role:      dstRole,
+					Reasoning: srcMessageContent.Thinking,
+					ReasoningDetails: []*openrouter.ChatCompletionMessageReasoningDetail{
+						{
+							Type:      openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText,
+							Text:      srcMessageContent.Thinking,
+							Signature: srcMessageContent.Signature,
+							Format:    openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1,
+						},
+					},
+				}
+				dstMessages = append(dstMessages, &openrouterChatCompletionMessageWrapper{
+					ChatCompletionMessage:      dstMessage,
+					underlyingAnthropicMessage: srcMessage,
+				})
+			case anthropic.MessageContentTypeRedactedThinking:
+				panic("unreachable redacted_thinking")
+			case anthropic.MessageContentTypeToolUse:
+				dstMessage := &openrouter.ChatCompletionMessage{
+					Role: openrouter.ChatCompletionMessageRoleAssistant,
+					ToolCalls: []*openrouter.ChatCompletionToolCall{
+						{
+							ID:   srcMessageContent.ID,
+							Type: openrouter.ChatCompletionMessageToolCallTypeFunction,
+							Function: &openrouter.ChatCompletionMessageToolCallFunction{
+								Name:      srcMessageContent.Name,
+								Arguments: string(srcMessageContent.Input),
+							},
+						},
+					},
+				}
+				if srcCacheControl := srcMessageContent.CacheControl; srcCacheControl != nil {
+					// Anthropic's ToolUse supports the CacheControl parameter, but in OpenRouter's ToolCalls definition we have not yet
+					// found a field for setting CacheControl. Therefore, we will temporarily ignore the CacheControl setting and add
+					// it in the future.
+				}
+				dstMessages = append(dstMessages, &openrouterChatCompletionMessageWrapper{
+					ChatCompletionMessage:      dstMessage,
+					underlyingAnthropicMessage: srcMessage,
+				})
+			case anthropic.MessageContentTypeToolResult:
+				dstMessage := &openrouter.ChatCompletionMessage{
+					Role:       openrouter.ChatCompletionMessageRoleTool,
+					ToolCallID: srcMessageContent.ToolUseID,
+				}
+				if srcMessageContent.Content != nil {
+					dstMessage.Content = convertAnthropicToolResultMessageContentsToOpenRouterChatCompletionMessageContent(srcMessageContent.Content)
+				}
+				dstMessages = append(dstMessages, &openrouterChatCompletionMessageWrapper{
+					ChatCompletionMessage:      dstMessage,
+					underlyingAnthropicMessage: srcMessage,
+				})
+			case anthropic.MessageContentTypeText:
+				dstPart := &openrouter.ChatCompletionMessageContentPart{
+					Type: openrouter.ChatCompletionMessageContentPartTypeText,
+					Text: srcMessageContent.Text,
+				}
+				if srcCacheControl := srcMessageContent.CacheControl; srcCacheControl != nil {
+					dstPart.CacheControl = &openrouter.ChatCompletionMessageCacheControl{
+						Type: openrouter.ChatCompletionMessageCacheControlType(srcCacheControl.Type),
+						TTL:  openrouter.ChatCompletionMessageCacheControlTTL(srcCacheControl.TTL),
+					}
+				}
+				dstMessage := &openrouter.ChatCompletionMessage{
+					Role: dstRole,
+					Content: &openrouter.ChatCompletionMessageContent{
+						Type:  openrouter.ChatCompletionMessageContentTypeParts,
+						Parts: []*openrouter.ChatCompletionMessageContentPart{dstPart},
+					},
+				}
+				dstMessages = append(dstMessages, &openrouterChatCompletionMessageWrapper{
+					ChatCompletionMessage:      dstMessage,
+					underlyingAnthropicMessage: srcMessage,
+				})
+			case anthropic.MessageContentTypeImage:
+				if srcMessageContentSource := srcMessageContent.Source; srcMessageContentSource != nil {
+					dstPart := &openrouter.ChatCompletionMessageContentPart{
+						Type: openrouter.ChatCompletionMessageContentPartTypeImage,
+						ImageUrl: &openrouter.ChatCompletionMessageContentPartImageUrl{
+							Url: fmt.Sprintf("data:%s;%s,%s", srcMessageContentSource.MediaType, srcMessageContentSource.Type, srcMessageContentSource.Data),
+						},
+					}
+					// Images: Content blocks in the messages.content array, in user turns
+					// reference: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching#what-can-be-cached
+					if srcMessage.Role == anthropic.MessageRoleUser {
+						if srcCacheControl := srcMessageContent.CacheControl; srcCacheControl != nil {
+							dstPart.CacheControl = &openrouter.ChatCompletionMessageCacheControl{
+								Type: openrouter.ChatCompletionMessageCacheControlType(srcCacheControl.Type),
+								TTL:  openrouter.ChatCompletionMessageCacheControlTTL(srcCacheControl.TTL),
+							}
+						}
+					}
+					dstMessage := &openrouter.ChatCompletionMessage{
+						Role: dstRole,
+						Content: &openrouter.ChatCompletionMessageContent{
+							Type:  openrouter.ChatCompletionMessageContentTypeParts,
+							Parts: []*openrouter.ChatCompletionMessageContentPart{dstPart},
+						},
+					}
+					dstMessages = append(dstMessages, &openrouterChatCompletionMessageWrapper{
+						ChatCompletionMessage:      dstMessage,
+						underlyingAnthropicMessage: srcMessage,
+					})
+				}
+			}
+		}
+	}
+	dst.Messages = canonicalOpenRouterMessages(dstMessages)
+	return dst
+}
+
+type openrouterChatCompletionMessageWrapper struct {
+	*openrouter.ChatCompletionMessage
+	underlyingAnthropicMessage *anthropic.Message
+}
+
+func canonicalOpenRouterMessages(
+	messageWrappers []*openrouterChatCompletionMessageWrapper,
+) (messages []*openrouter.ChatCompletionMessage) {
+	messages = make([]*openrouter.ChatCompletionMessage, 0, len(messageWrappers))
+	var (
+		currentChatCompletionMessage      *openrouter.ChatCompletionMessage
+		currentUnderlyingAnthropicMessage *anthropic.Message
+	)
+	for _, wrapper := range messageWrappers {
+		if wrapper.Role == openrouter.ChatCompletionMessageRoleSystem ||
+			wrapper.Role == openrouter.ChatCompletionMessageRoleTool {
+			if currentChatCompletionMessage != nil {
+				messages = append(messages, currentChatCompletionMessage)
+				currentChatCompletionMessage = nil
+			}
+			messages = append(messages, wrapper.ChatCompletionMessage)
+		} else if underlyingMessage := wrapper.underlyingAnthropicMessage; underlyingMessage != nil {
+			if underlyingMessage != currentUnderlyingAnthropicMessage {
+				currentUnderlyingAnthropicMessage = underlyingMessage
+				if currentChatCompletionMessage != nil {
+					messages = append(messages, currentChatCompletionMessage)
+				}
+				currentChatCompletionMessage = wrapper.ChatCompletionMessage
+			} else if currentChatCompletionMessage != nil {
+				if currentChatCompletionMessage.Role == openrouter.ChatCompletionMessageRoleAssistant {
+					if currentChatCompletionMessage.Reasoning == "" && wrapper.Reasoning != "" {
+						currentChatCompletionMessage.Reasoning = wrapper.Reasoning
+					}
+					if len(wrapper.ReasoningDetails) > 0 {
+						currentChatCompletionMessage.ReasoningDetails = append(currentChatCompletionMessage.ReasoningDetails, wrapper.ReasoningDetails...)
+					}
+					if len(wrapper.ToolCalls) > 0 {
+						currentChatCompletionMessage.ToolCalls = append(currentChatCompletionMessage.ToolCalls, wrapper.ToolCalls...)
+					}
+				}
+				if currentChatCompletionMessage.Content != nil && wrapper.Content != nil {
+					if currentChatCompletionMessage.Content.IsText() {
+						currentChatCompletionMessage.Content = &openrouter.ChatCompletionMessageContent{
+							Type: openrouter.ChatCompletionMessageContentTypeParts,
+							Parts: []*openrouter.ChatCompletionMessageContentPart{
+								{
+									Type: openrouter.ChatCompletionMessageContentPartTypeText,
+									Text: currentChatCompletionMessage.Content.Text,
+								},
+							},
+						}
+					}
+					switch wrapper.Content.Type {
+					case openrouter.ChatCompletionMessageContentTypeText:
+						currentChatCompletionMessage.Content.Parts = append(currentChatCompletionMessage.Content.Parts, &openrouter.ChatCompletionMessageContentPart{
+							Type: openrouter.ChatCompletionMessageContentPartTypeText,
+							Text: wrapper.Content.Text,
+						})
+					case openrouter.ChatCompletionMessageContentTypeParts:
+						currentChatCompletionMessage.Content.Parts = append(currentChatCompletionMessage.Content.Parts, wrapper.Content.Parts...)
+					}
+				}
+			}
+		}
+	}
+	if currentChatCompletionMessage != nil {
+		messages = append(messages, currentChatCompletionMessage)
+	}
+	for _, message := range messages {
+		switch message.Role {
+		case openrouter.ChatCompletionMessageRoleAssistant:
+			if content := message.Content; content != nil && content.IsParts() && len(content.Parts) == 1 {
+				if part := content.Parts[0]; part.Type == openrouter.ChatCompletionMessageContentPartTypeText {
+					// Anthropic only accepts text message in a single assistant message, and content should be a string
+					content.Type = openrouter.ChatCompletionMessageContentTypeText
+					content.Text = part.Text
+					content.Parts = nil
+				}
+			}
+			if len(message.ReasoningDetails) > 0 {
+				for index, reasoningDetail := range message.ReasoningDetails {
+					reasoningDetail.Index = index
+				}
+			}
+			if len(message.ToolCalls) > 0 {
+				for index, toolCall := range message.ToolCalls {
+					toolCall.Index = index
+				}
+			}
+		}
+		// OpenRouter says that the cache_control breakpoint can only be inserted into the text part of a multipart message.
+		// So we remove CacheControl fields from content parts for non-text type.
+		//
+		// reference: https://openrouter.ai/docs/features/prompt-caching#anthropic-claude
+		if content := message.Content; content != nil && content.IsParts() {
+			for _, part := range content.Parts {
+				if part.Type != openrouter.ChatCompletionMessageContentPartTypeText {
+					part.CacheControl = nil
+				}
+			}
+		}
+	}
+	return messages
+}
+
+func convertAnthropicToolResultMessageContentsToOpenRouterChatCompletionMessageContent(
+	src anthropic.MessageContents,
+) (dst *openrouter.ChatCompletionMessageContent) {
+	if len(src) == 0 {
+		return &openrouter.ChatCompletionMessageContent{
+			Type: openrouter.ChatCompletionMessageContentTypeText,
+		}
+	}
+	dst = &openrouter.ChatCompletionMessageContent{
+		Type:  openrouter.ChatCompletionMessageContentTypeParts,
+		Parts: make([]*openrouter.ChatCompletionMessageContentPart, 0, len(src)),
+	}
+	for _, srcContent := range src {
+		switch srcContent.Type {
+		case anthropic.MessageContentTypeToolUse, anthropic.MessageContentTypeToolResult:
+			panic("unreachable tool_use/tool_result")
+		case anthropic.MessageContentTypeThinking, anthropic.MessageContentTypeRedactedThinking:
+			panic("unreachable thinking/redacted_thinking")
+		case anthropic.MessageContentTypeText:
+			dstPart := &openrouter.ChatCompletionMessageContentPart{
+				Type: openrouter.ChatCompletionMessageContentPartTypeText,
+				Text: srcContent.Text,
+			}
+			if srcCacheControl := srcContent.CacheControl; srcCacheControl != nil {
+				dstPart.CacheControl = &openrouter.ChatCompletionMessageCacheControl{
+					Type: openrouter.ChatCompletionMessageCacheControlType(srcCacheControl.Type),
+					TTL:  openrouter.ChatCompletionMessageCacheControlTTL(srcCacheControl.TTL),
+				}
+			}
+			dst.Parts = append(dst.Parts, dstPart)
+		case anthropic.MessageContentTypeImage:
+			if srcContentSource := srcContent.Source; srcContentSource != nil {
+				dstPart := &openrouter.ChatCompletionMessageContentPart{
+					Type: openrouter.ChatCompletionMessageContentPartTypeImage,
+					ImageUrl: &openrouter.ChatCompletionMessageContentPartImageUrl{
+						Url: fmt.Sprintf("data:%s;%s,%s", srcContentSource.MediaType, srcContentSource.Type, srcContentSource.Data),
+					},
+				}
+				if srcCacheControl := srcContent.CacheControl; srcCacheControl != nil {
+					dstPart.CacheControl = &openrouter.ChatCompletionMessageCacheControl{
+						Type: openrouter.ChatCompletionMessageCacheControlType(srcCacheControl.Type),
+						TTL:  openrouter.ChatCompletionMessageCacheControlTTL(srcCacheControl.TTL),
+					}
+				}
+				dst.Parts = append(dst.Parts, dstPart)
+			}
+		}
+	}
+	return dst
+}
