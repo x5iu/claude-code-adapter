@@ -8,6 +8,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
+	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openai"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
 	"github.com/x5iu/claude-code-adapter/pkg/profile"
 )
@@ -377,4 +378,11 @@ func reasoningDetailsContainsReasoningTypes(
 		}
 	}
 	return false
+}
+
+func ConvertOpenAIStreamToAnthropicStream(
+	stream openai.ResponseStream,
+	options ...ConvertStreamOption,
+) anthropic.MessageStream {
+	panic("unimplemented")
 }

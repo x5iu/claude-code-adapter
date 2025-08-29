@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
+	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openai"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
 	"github.com/x5iu/claude-code-adapter/pkg/profile"
 	"github.com/x5iu/claude-code-adapter/pkg/utils"
@@ -30,6 +31,7 @@ var providerErrorParser = map[string]func(*http.Response) error{
 	ProviderMethodGenerateAnthropicMessage:       parseError[*anthropic.Error],
 	ProviderMethodCountAnthropicTokens:           parseError[*anthropic.Error],
 	ProviderMethodCreateOpenRouterChatCompletion: parseError[*openrouter.Error],
+	ProviderMethodCreateOpenAIModelResponse:      parseError[*openai.Error],
 }
 
 func (r *ResponseHandler) ScanValues(values ...any) error {
@@ -60,6 +62,12 @@ func (r *ResponseHandler) ScanValues(values ...any) error {
 		}
 		stream := values[0].(*openrouter.ChatCompletionStream)
 		*stream = makeOpenRouterStream(profile.MustFromContext(ctx), r.Response.Body)
+	case ProviderMethodCreateOpenAIModelResponse:
+		if !utils.IsContentType(responseHeader, "text/event-stream") {
+			return fmt.Errorf("unexpected Content-Type: %s", responseHeader.Get("Content-Type"))
+		}
+		stream := values[0].(*openai.ResponseStream)
+		*stream = makeOpenAIStream(r.Response.Body)
 	default:
 		defer r.Response.Body.Close()
 		switch {
@@ -101,6 +109,70 @@ var anthropicEventBuilder = map[anthropic.EventType]func([]byte) (anthropic.Even
 	anthropic.EventTypeContentBlockStart: unmarshalAnthropicEvent[*anthropic.EventContentBlockStart],
 	anthropic.EventTypeContentBlockDelta: unmarshalAnthropicEvent[*anthropic.EventContentBlockDelta],
 	anthropic.EventTypeContentBlockStop:  unmarshalAnthropicEvent[*anthropic.EventContentBlockStop],
+}
+
+var openaiEventBuilder = map[openai.EventType]func([]byte) (openai.Event, error){
+	openai.EventTypeResponseAudioDelta:                      unmarshalOpenAIEvent[*openai.ResponseAudioDeltaEvent],
+	openai.EventTypeResponseAudioDone:                       unmarshalOpenAIEvent[*openai.ResponseAudioDoneEvent],
+	openai.EventTypeResponseAudioTranscriptDelta:            unmarshalOpenAIEvent[*openai.ResponseAudioTranscriptDeltaEvent],
+	openai.EventTypeResponseAudioTranscriptDone:             unmarshalOpenAIEvent[*openai.ResponseAudioTranscriptDoneEvent],
+	openai.EventTypeResponseCodeInterpreterCallCodeDelta:    unmarshalOpenAIEvent[*openai.ResponseCodeInterpreterCallCodeDeltaEvent],
+	openai.EventTypeResponseCodeInterpreterCallCodeDone:     unmarshalOpenAIEvent[*openai.ResponseCodeInterpreterCallCodeDoneEvent],
+	openai.EventTypeResponseCodeInterpreterCallCompleted:    unmarshalOpenAIEvent[*openai.ResponseCodeInterpreterCallCompletedEvent],
+	openai.EventTypeResponseCodeInterpreterCallInProgress:   unmarshalOpenAIEvent[*openai.ResponseCodeInterpreterCallInProgressEvent],
+	openai.EventTypeResponseCodeInterpreterCallInterpreting: unmarshalOpenAIEvent[*openai.ResponseCodeInterpreterCallInterpretingEvent],
+	openai.EventTypeResponseCompleted:                       unmarshalOpenAIEvent[*openai.ResponseCompletedEvent],
+	openai.EventTypeResponseContentPartAdded:                unmarshalOpenAIEvent[*openai.ResponseContentPartAddedEvent],
+	openai.EventTypeResponseContentPartDone:                 unmarshalOpenAIEvent[*openai.ResponseContentPartDoneEvent],
+	openai.EventTypeResponseCreated:                         unmarshalOpenAIEvent[*openai.ResponseCreatedEvent],
+	openai.EventTypeError:                                   unmarshalOpenAIEvent[*openai.ResponseErrorEvent],
+	openai.EventTypeResponseFileSearchCallCompleted:         unmarshalOpenAIEvent[*openai.ResponseFileSearchCallCompletedEvent],
+	openai.EventTypeResponseFileSearchCallInProgress:        unmarshalOpenAIEvent[*openai.ResponseFileSearchCallInProgressEvent],
+	openai.EventTypeResponseFileSearchCallSearching:         unmarshalOpenAIEvent[*openai.ResponseFileSearchCallSearchingEvent],
+	openai.EventTypeResponseFunctionCallArgumentsDelta:      unmarshalOpenAIEvent[*openai.ResponseFunctionCallArgumentsDeltaEvent],
+	openai.EventTypeResponseFunctionCallArgumentsDone:       unmarshalOpenAIEvent[*openai.ResponseFunctionCallArgumentsDoneEvent],
+	openai.EventTypeResponseInProgress:                      unmarshalOpenAIEvent[*openai.ResponseInProgressEvent],
+	openai.EventTypeResponseFailed:                          unmarshalOpenAIEvent[*openai.ResponseFailedEvent],
+	openai.EventTypeResponseIncomplete:                      unmarshalOpenAIEvent[*openai.ResponseIncompleteEvent],
+	openai.EventTypeResponseOutputItemAdded:                 unmarshalOpenAIEvent[*openai.ResponseOutputItemAddedEvent],
+	openai.EventTypeResponseOutputItemDone:                  unmarshalOpenAIEvent[*openai.ResponseOutputItemDoneEvent],
+	openai.EventTypeResponseReasoningSummaryPartAdded:       unmarshalOpenAIEvent[*openai.ResponseReasoningSummaryPartAddedEvent],
+	openai.EventTypeResponseReasoningSummaryPartDone:        unmarshalOpenAIEvent[*openai.ResponseReasoningSummaryPartDoneEvent],
+	openai.EventTypeResponseReasoningSummaryTextDelta:       unmarshalOpenAIEvent[*openai.ResponseReasoningSummaryTextDeltaEvent],
+	openai.EventTypeResponseReasoningSummaryTextDone:        unmarshalOpenAIEvent[*openai.ResponseReasoningSummaryTextDoneEvent],
+	openai.EventTypeResponseReasoningTextDelta:              unmarshalOpenAIEvent[*openai.ResponseReasoningTextDeltaEvent],
+	openai.EventTypeResponseReasoningTextDone:               unmarshalOpenAIEvent[*openai.ResponseReasoningTextDoneEvent],
+	openai.EventTypeResponseRefusalDelta:                    unmarshalOpenAIEvent[*openai.ResponseRefusalDeltaEvent],
+	openai.EventTypeResponseRefusalDone:                     unmarshalOpenAIEvent[*openai.ResponseRefusalDoneEvent],
+	openai.EventTypeResponseOutputTextDelta:                 unmarshalOpenAIEvent[*openai.ResponseTextDeltaEvent],
+	openai.EventTypeResponseOutputTextDone:                  unmarshalOpenAIEvent[*openai.ResponseTextDoneEvent],
+	openai.EventTypeResponseWebSearchCallCompleted:          unmarshalOpenAIEvent[*openai.ResponseWebSearchCallCompletedEvent],
+	openai.EventTypeResponseWebSearchCallInProgress:         unmarshalOpenAIEvent[*openai.ResponseWebSearchCallInProgressEvent],
+	openai.EventTypeResponseWebSearchCallSearching:          unmarshalOpenAIEvent[*openai.ResponseWebSearchCallSearchingEvent],
+	openai.EventTypeResponseImageGenCallCompleted:           unmarshalOpenAIEvent[*openai.ResponseImageGenCallCompletedEvent],
+	openai.EventTypeResponseImageGenCallGenerating:          unmarshalOpenAIEvent[*openai.ResponseImageGenCallGeneratingEvent],
+	openai.EventTypeResponseImageGenCallInProgress:          unmarshalOpenAIEvent[*openai.ResponseImageGenCallInProgressEvent],
+	openai.EventTypeResponseImageGenCallPartialImage:        unmarshalOpenAIEvent[*openai.ResponseImageGenCallPartialImageEvent],
+	openai.EventTypeResponseMcpCallArgumentsDelta:           unmarshalOpenAIEvent[*openai.ResponseMcpCallArgumentsDeltaEvent],
+	openai.EventTypeResponseMcpCallArgumentsDone:            unmarshalOpenAIEvent[*openai.ResponseMcpCallArgumentsDoneEvent],
+	openai.EventTypeResponseMcpCallCompleted:                unmarshalOpenAIEvent[*openai.ResponseMcpCallCompletedEvent],
+	openai.EventTypeResponseMcpCallFailed:                   unmarshalOpenAIEvent[*openai.ResponseMcpCallFailedEvent],
+	openai.EventTypeResponseMcpCallInProgress:               unmarshalOpenAIEvent[*openai.ResponseMcpCallInProgressEvent],
+	openai.EventTypeResponseMcpListToolsInProgress:          unmarshalOpenAIEvent[*openai.ResponseMcpListToolsInProgressEvent],
+	openai.EventTypeResponseMcpListToolsCompleted:           unmarshalOpenAIEvent[*openai.ResponseMcpListToolsCompletedEvent],
+	openai.EventTypeResponseMcpListToolsFailed:              unmarshalOpenAIEvent[*openai.ResponseMcpListToolsFailedEvent],
+	openai.EventTypeResponseOutputTextAnnotationAdded:       unmarshalOpenAIEvent[*openai.ResponseOutputTextAnnotationAddedEvent],
+	openai.EventTypeResponseQueued:                          unmarshalOpenAIEvent[*openai.ResponseQueuedEvent],
+	openai.EventTypeResponseCustomToolCallInputDelta:        unmarshalOpenAIEvent[*openai.ResponseCustomToolCallInputDeltaEvent],
+	openai.EventTypeResponseCustomToolCallInputDone:         unmarshalOpenAIEvent[*openai.ResponseCustomToolCallInputDoneEvent],
+}
+
+func unmarshalOpenAIEvent[E openai.Event](data []byte) (openai.Event, error) {
+	var event E
+	if err := json.Unmarshal(data, &event); err != nil {
+		return nil, err
+	}
+	return event, nil
 }
 
 func unmarshalAnthropicEvent[E anthropic.Event](data []byte) (anthropic.Event, error) {
@@ -167,6 +239,41 @@ func MakeAnthropicStream(prof *profile.Profile, r io.ReadCloser) anthropic.Messa
 					return
 				}
 				if unmarshalEvent, ok := anthropicEventBuilder[anthropic.EventType(bytes.TrimSpace(eventType))]; ok {
+					event, err := unmarshalEvent(data)
+					if err != nil {
+						yield(nil, err)
+						return
+					}
+					if !yield(event, nil) {
+						return
+					}
+				}
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			yield(nil, err)
+		}
+	}
+}
+
+func makeOpenAIStream(r io.ReadCloser) openai.ResponseStream {
+	return func(yield func(openai.Event, error) bool) {
+		defer r.Close()
+		scanner := bufio.NewScanner(r)
+		for scanner.Scan() {
+			line := bytes.TrimSpace(scanner.Bytes())
+			if len(line) == 0 {
+				continue
+			}
+			eventType, isEvent := bytes.CutPrefix(line, []byte("event:"))
+			eventType = bytes.Clone(eventType) // next Scan overwrites bytes under eventType, a Clone keeps it unchanged
+			if isEvent && scanner.Scan() {
+				data, isData := bytes.CutPrefix(bytes.TrimSpace(scanner.Bytes()), []byte("data:"))
+				if !isData {
+					yield(nil, fmt.Errorf("missing openai %q data chunk", string(eventType)))
+					return
+				}
+				if unmarshalEvent, ok := openaiEventBuilder[openai.EventType(bytes.TrimSpace(eventType))]; ok {
 					event, err := unmarshalEvent(data)
 					if err != nil {
 						yield(nil, err)

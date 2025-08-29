@@ -8,6 +8,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
+	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openai"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
 	"github.com/x5iu/claude-code-adapter/pkg/profile"
 )
@@ -547,4 +548,90 @@ func getOpenRouterModelReasoningFormat(
 		}
 	}
 	return openrouter.ChatCompletionMessageReasoningDetailFormat(prof.Options.GetReasoningFormat())
+}
+
+func ConvertAnthropicRequestToOpenAIRequest(
+	src *anthropic.GenerateMessageRequest,
+	options ...ConvertRequestOption,
+) (dst *openai.CreateModelResponseRequest) {
+	convertOptions := &ConvertRequestOptions{}
+	for _, applyOption := range options {
+		applyOption(convertOptions)
+	}
+	dst = &openai.CreateModelResponseRequest{
+		Instructions: convertAnthropicSystemContentToOpenAIInstruction(src.System),
+		Model:        src.Model,
+	}
+	if modelMapper := viper.GetStringMapString(delimiter.ViperKey("options", "models")); modelMapper != nil {
+		if targetModel, ok := modelMapper[dst.Model]; ok {
+			dst.Model = targetModel
+		}
+	}
+	return dst
+}
+
+func convertAnthropicSystemContentToOpenAIInstruction(
+	src anthropic.MessageContents,
+) (dst string) {
+	for _, srcContent := range src {
+		if srcContent.Type != anthropic.MessageContentTypeText {
+			panic("anthropic system message content should be text, reference: https://docs.claude.com/en/api/messages#body-system-type")
+		}
+	}
+	var instruction strings.Builder
+	for _, srcContent := range src {
+		instruction.WriteString(srcContent.Text)
+		instruction.WriteString("\n\n")
+	}
+	return instruction.String()
+}
+
+func convertAnthropicMessageToOpenAIInputItem(
+	src *anthropic.Message,
+) (dst *openai.ResponseInputItemParam) {
+	dst = &openai.ResponseInputItemParam{}
+	switch src.Role {
+	case anthropic.MessageRoleUser:
+		for _, srcContent := range src.Content {
+			switch srcContent.Type {
+			case anthropic.MessageContentTypeText:
+				dst.Message = &openai.ResponseMessage{
+					Type:    openai.ResponseInputItemTypeMessage,
+					Role:    openai.ResponseMessageRoleUser,
+					Content: openai.NewTextContent(srcContent.Text),
+				}
+			case anthropic.MessageContentTypeImage:
+				if srcImage := srcContent.Source; srcImage != nil {
+					dst.Message = &openai.ResponseMessage{
+						Type: openai.ResponseInputItemTypeMessage,
+						Role: openai.ResponseMessageRoleUser,
+						Content: openai.ResponseMessageContents{
+							&openai.ResponseMessageContent{
+								Image: &openai.ResponseMessageContentImage{
+									Type:     openai.ResponseMessageContentTypeInputImage,
+									ImageUrl: fmt.Sprintf("data:%s;%s,%s", srcImage.MediaType, srcImage.Type, srcImage.Data),
+									Detail:   openai.ResponseMessageContentImageDetailAuto,
+								},
+							},
+						},
+					}
+				}
+			case anthropic.MessageContentTypeToolResult:
+			}
+		}
+	case anthropic.MessageRoleAssistant:
+		for _, srcContent := range src.Content {
+			switch srcContent.Type {
+			case anthropic.MessageContentTypeText:
+				dst.Message = &openai.ResponseMessage{
+					Type:    openai.ResponseInputItemTypeMessage,
+					Role:    openai.ResponseMessageRoleAssistant,
+					Content: openai.NewTextContent(srcContent.Text),
+				}
+			case anthropic.MessageContentTypeToolUse:
+			case anthropic.MessageContentTypeThinking:
+			}
+		}
+	}
+	return dst
 }
