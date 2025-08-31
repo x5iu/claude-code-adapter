@@ -1691,3 +1691,63 @@ func TestConvertAnthropicRequestToOpenRouterRequest_NewMessageFormat(t *testing.
 		t.Errorf("Assistant message text should be 'Hi there', got '%s'", assistantMsg.Content.Text)
 	}
 }
+
+func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_AnthropicClaudeV1(t *testing.T) {
+	prevFormat := viper.GetString("mapping.reasoning.format")
+	prevEffort := viper.GetString("mapping.reasoning.effort")
+	viper.Set("mapping.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
+	viper.Set("mapping.reasoning.effort", "high")
+	defer viper.Set("mapping.reasoning.format", prevFormat)
+	defer viper.Set("mapping.reasoning.effort", prevEffort)
+
+	src := &anthropic.GenerateMessageRequest{
+		Model:     "claude-3-5-sonnet-20241022",
+		MaxTokens: 500,
+		Thinking: &anthropic.Thinking{
+			Type:         anthropic.ThinkingTypeEnabled,
+			BudgetTokens: 123,
+		},
+		Messages: []*anthropic.Message{},
+	}
+
+	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	if got.Reasoning == nil {
+		t.Fatalf("Reasoning is nil")
+	}
+	if got.Reasoning.Effort != "" {
+		t.Errorf("Effort should be cleared, got %q", got.Reasoning.Effort)
+	}
+	if got.Reasoning.MaxTokens != 123 {
+		t.Errorf("MaxTokens should remain 123, got %d", got.Reasoning.MaxTokens)
+	}
+}
+
+func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_OpenAIResponsesV1(t *testing.T) {
+	prevFormat := viper.GetString("mapping.reasoning.format")
+	prevEffort := viper.GetString("mapping.reasoning.effort")
+	viper.Set("mapping.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
+	viper.Set("mapping.reasoning.effort", "medium")
+	defer viper.Set("mapping.reasoning.format", prevFormat)
+	defer viper.Set("mapping.reasoning.effort", prevEffort)
+
+	src := &anthropic.GenerateMessageRequest{
+		Model:     "claude-3-5-sonnet-20241022",
+		MaxTokens: 500,
+		Thinking: &anthropic.Thinking{
+			Type:         anthropic.ThinkingTypeEnabled,
+			BudgetTokens: 200,
+		},
+		Messages: []*anthropic.Message{},
+	}
+
+	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	if got.Reasoning == nil {
+		t.Fatalf("Reasoning is nil")
+	}
+	if got.Reasoning.MaxTokens != 0 {
+		t.Errorf("MaxTokens should be zeroed for OpenAIResponsesV1, got %d", got.Reasoning.MaxTokens)
+	}
+	if string(got.Reasoning.Effort) != "medium" {
+		t.Errorf("Effort should retain configured value, got %q", got.Reasoning.Effort)
+	}
+}

@@ -13,6 +13,7 @@ import (
 
 func init() {
 	viper.SetDefault("mapping.strict", false)
+	viper.SetDefault("mapping.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
 	viper.SetDefault("mapping.reasoning.effort", "medium")
 	viper.SetDefault("mapping.models", map[string]string{})
 }
@@ -117,6 +118,12 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 			reasoning.Enabled = false
 		}
 		reasoning.Effort = openrouter.ChatCompletionReasoningEffort(viper.GetString("mapping.reasoning.effort"))
+		switch format := viper.GetString("mapping.reasoning.format"); format {
+		case string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1):
+			reasoning.Effort = ""
+		case string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1):
+			reasoning.MaxTokens = 0
+		}
 		dst.Reasoning = reasoning
 	}
 	dstMessages := make([]*openrouterChatCompletionMessageWrapper, 0, len(src.Messages))
