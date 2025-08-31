@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/samber/lo"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -33,41 +34,55 @@ const (
 )
 
 func newServeCommand() *cobra.Command {
+	var configFile string
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start claude-code-adapter-cli http server",
 		Args:  cobra.NoArgs,
 		PreRun: func(*cobra.Command, []string) {
+			if configFile != "" {
+				viper.SetConfigFile(configFile)
+			}
+			if err := viper.ReadInConfig(); err != nil {
+				if !errors.As(err, &viper.ConfigFileNotFoundError{}) {
+					slog.Info(fmt.Sprintf("error reading config file: %s", err.Error()))
+				}
+				slog.Info("using default config")
+			}
+			viper.OnConfigChange(func(fsnotify.Event) {
+				slog.Info("config file changed, reloading")
+			})
+			viper.WatchConfig()
 			if viper.GetBool("debug") {
 				slog.Info("using debug mode")
 				slog.SetLogLoggerLevel(slog.LevelDebug)
+				var debugBuf strings.Builder
+				viper.DebugTo(&debugBuf)
+				slog.Debug(">>>>>>>>>>>>>>>>> viper >>>>>>>>>>>>>>>>>" + "\n" + debugBuf.String())
+				slog.Debug("<<<<<<<<<<<<<<<<< viper <<<<<<<<<<<<<<<<<")
 			}
 		},
 		Run: serve,
 	}
 	flags := cmd.Flags()
+	flags.StringVarP(&configFile, "config", "c", "", "config file (default is $HOME/.claude-code-adapter/config.yaml)")
 	flags.Bool("debug", false, "enable debug logging")
 	flags.Uint16P("port", "p", 2194, "port to serve on")
-	flags.Bool("strict", false, "strict validation")
 	flags.String("provider", "openrouter", "provider to use")
+	flags.Bool("strict", false, "strict validation")
+	flags.String("format", string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1), "reasoning format")
 	flags.Bool("enable-pass-through-mode", false, "enable pass through mode")
 	cobra.CheckErr(viper.BindPFlag("debug", flags.Lookup("debug")))
 	cobra.CheckErr(viper.BindPFlag("http.port", flags.Lookup("port")))
-	cobra.CheckErr(viper.BindPFlag("strict", flags.Lookup("strict")))
 	cobra.CheckErr(viper.BindPFlag("provider", flags.Lookup("provider")))
+	cobra.CheckErr(viper.BindPFlag("mapping.reasoning.strict", flags.Lookup("strict")))
+	cobra.CheckErr(viper.BindPFlag("mapping.reasoning.format", flags.Lookup("format")))
 	cobra.CheckErr(viper.BindPFlag("anthropic.enable_pass_through_mode", flags.Lookup("enable-pass-through-mode")))
 	viper.SetOptions(viper.WithLogger(slog.Default()))
-	viper.SetDefault("provider", "openrouter")
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath("$HOME/.claude-code-adapter/")
 	viper.AddConfigPath(".")
-	if err := viper.ReadInConfig(); err != nil {
-		if !errors.As(err, &viper.ConfigFileNotFoundError{}) {
-			slog.Info(fmt.Sprintf("error reading config file: %s", err.Error()))
-		}
-		slog.Info("using default config")
-	}
 	return cmd
 }
 
@@ -152,6 +167,13 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 		)
 		countTokensCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
+		// When tool.type is null, the /v1/messages/count_tokens endpoint will return the error
+		// tools.0.get_defaulted_tool_discriminator(): Field required, so we need to preprocess tools to avoid this error.
+		for _, tool := range req.Tools {
+			if tool.Type == nil {
+				tool.Type = lo.ToPtr(anthropic.ToolTypeCustom)
+			}
+		}
 		usage, err := p.CountAnthropicTokens(countTokensCtx, &anthropic.CountTokensRequest{
 			System:     req.System,
 			Model:      req.Model,
@@ -198,7 +220,7 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 				}
 				slog.Info(fmt.Sprintf("[%d] request's thinking tokens (%d) is greater than max tokens (%d)", requestID, req.Thinking.BudgetTokens, req.MaxTokens))
 			}
-			return budgetTokensOverflow
+			return budgetTokensOverflow && !viper.GetBool("anthropic.disable_interleaved_thinking")
 		}
 		useAnthropicProvider := func(provider string) bool {
 			return hasServerTools() || useInterleavedThinking() || provider == ProviderAnthropic
@@ -265,7 +287,6 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 				return
 			}
 		} else {
-			modelMapper := viper.GetStringMapString("mapping.models")
 			switch ccProvider {
 			case ProviderOpenRouter:
 				fallthrough
@@ -276,7 +297,7 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 				allowedProviders := viper.GetStringSlice("openrouter.allowed_providers")
 				orStream, _, err := p.CreateOpenRouterChatCompletion(
 					r.Context(),
-					adapter.ConvertAnthropicRequestToOpenRouterRequest(req, adapter.WithModelMapper(modelMapper)),
+					adapter.ConvertAnthropicRequestToOpenRouterRequest(req),
 					openrouter.WithIdentity("https://github.com/x5iu/claude-code-adapter", "claude-code-adapter"),
 					openrouter.WithProviderPreference(&openrouter.ProviderPreference{
 						Order:             allowedProviders,

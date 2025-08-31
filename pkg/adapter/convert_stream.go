@@ -2,14 +2,19 @@ package adapter
 
 import (
 	"encoding/json"
-	"fmt"
+	"path/filepath"
 	"sync"
 
 	"github.com/samber/lo"
+	"github.com/spf13/viper"
 
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
 )
+
+func init() {
+	viper.SetDefault("mapping.reasoning.delimiter", filepath.Separator)
+}
 
 type ConvertStreamOptions struct {
 	InputTokens        int64
@@ -106,34 +111,71 @@ func ConvertOpenRouterStreamToAnthropicStream(
 							}
 						}
 						for _, reasoningDetail := range reasoningDetails {
-							// Claude Code will crash when it encounters an empty thinking field, so we need to ensure that
-							// every event contains valid thinking characters.
-							//
-							// And the bad news is that OpenRouter tends to output empty thinking deltas.
-							if reasoningDetailText := reasoningDetail.Text; reasoningDetailText != "" {
-								blockDelta := &anthropic.EventContentBlockDelta{
-									Type:  anthropic.EventTypeContentBlockDelta,
-									Index: blockIndex,
-									Delta: &anthropic.MessageContentDelta{
-										Type:     anthropic.MessageContentDeltaTypeThinkingDelta,
-										Thinking: reasoningDetailText,
-									},
+							switch reasoningDetail.Type {
+							case openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText:
+								// Claude Code will crash when it encounters an empty thinking field, so we need to ensure that
+								// every event contains valid thinking characters.
+								//
+								// And the bad news is that OpenRouter tends to output empty thinking deltas.
+								if reasoningDetailText := reasoningDetail.Text; reasoningDetailText != "" {
+									blockDelta := &anthropic.EventContentBlockDelta{
+										Type:  anthropic.EventTypeContentBlockDelta,
+										Index: blockIndex,
+										Delta: &anthropic.MessageContentDelta{
+											Type:     anthropic.MessageContentDeltaTypeThinkingDelta,
+											Thinking: reasoningDetailText,
+										},
+									}
+									if !yield(blockDelta, nil) {
+										return
+									}
 								}
-								if !yield(blockDelta, nil) {
-									return
+								if reasoningDetail.Signature != "" {
+									blockDelta := &anthropic.EventContentBlockDelta{
+										Type:  anthropic.EventTypeContentBlockDelta,
+										Index: blockIndex,
+										Delta: &anthropic.MessageContentDelta{
+											Type:      anthropic.MessageContentDeltaTypeSignatureDelta,
+											Signature: reasoningDetail.Signature,
+										},
+									}
+									if !yield(blockDelta, nil) {
+										return
+									}
 								}
-							}
-							if reasoningDetail.Signature != "" {
-								blockDelta := &anthropic.EventContentBlockDelta{
-									Type:  anthropic.EventTypeContentBlockDelta,
-									Index: blockIndex,
-									Delta: &anthropic.MessageContentDelta{
-										Type:      anthropic.MessageContentDeltaTypeSignatureDelta,
-										Signature: reasoningDetail.Signature,
-									},
+							case openrouter.ChatCompletionMessageReasoningDetailTypeSummary:
+								if reasoningDetailSummary := reasoningDetail.Summary; reasoningDetailSummary != "" {
+									blockDelta := &anthropic.EventContentBlockDelta{
+										Type:  anthropic.EventTypeContentBlockDelta,
+										Index: blockIndex,
+										Delta: &anthropic.MessageContentDelta{
+											Type:     anthropic.MessageContentDeltaTypeThinkingDelta,
+											Thinking: reasoningDetailSummary,
+										},
+									}
+									if !yield(blockDelta, nil) {
+										return
+									}
 								}
-								if !yield(blockDelta, nil) {
-									return
+							case openrouter.ChatCompletionMessageReasoningDetailTypeEncrypted:
+								if reasoningDetailData := reasoningDetail.Data; reasoningDetailData != "" {
+									var signature string
+									if reasoningDetailID := reasoningDetail.ID; reasoningDetailID != "" {
+										signature = reasoningDetailID + viper.GetString("mapping.reasoning.delimiter") + reasoningDetailData
+									} else {
+										signature = reasoningDetailData
+									}
+									blockDelta := &anthropic.EventContentBlockDelta{
+										Type:  anthropic.EventTypeContentBlockDelta,
+										Index: blockIndex,
+										Delta: &anthropic.MessageContentDelta{
+											Type:      anthropic.MessageContentDeltaTypeSignatureDelta,
+											Signature: signature,
+										},
+									}
+									if !yield(blockDelta, nil) {
+										return
+									}
 								}
 							}
 						}
@@ -250,59 +292,6 @@ func ConvertOpenRouterStreamToAnthropicStream(
 		}
 		yield(&anthropic.EventMessageStop{Type: anthropic.EventTypeMessageStop}, nil)
 	}
-}
-
-func ConvertOpenRouterStreamToAnthropicMessage(
-	stream openrouter.ChatCompletionStream,
-) (*anthropic.Message, error) {
-	builder := openrouter.NewChatCompletionBuilder()
-	for chunk, err := range stream {
-		if err != nil {
-			return nil, err
-		}
-		builder.Add(chunk)
-	}
-	src := builder.Build()
-	dst := &anthropic.Message{
-		ID:    src.ID,
-		Type:  anthropic.MessageTypeMessage,
-		Role:  anthropic.MessageRoleAssistant,
-		Model: src.Model,
-		Usage: &anthropic.Usage{
-			InputTokens:  src.GetPromptTokens(),
-			OutputTokens: src.GetCompletionTokens(),
-		},
-	}
-	if len(src.Choices) == 0 {
-		return nil, fmt.Errorf("no choices found")
-	}
-	dst.StopReason = lo.ToPtr(ConvertOpenRouterFinishReasonToAnthropicStopReason(
-		src.Choices[0].FinishReason,
-		src.Choices[0].NativeFinishReason,
-	))
-	srcMessage := src.Choices[0].Message
-	for _, reasoningDetail := range srcMessage.ReasoningDetails {
-		dst.Content = append(dst.Content, &anthropic.MessageContent{
-			Type:      anthropic.MessageContentTypeThinking,
-			Thinking:  reasoningDetail.Text,
-			Signature: reasoningDetail.Signature,
-		})
-	}
-	dst.Content = append(dst.Content, &anthropic.MessageContent{
-		Type: anthropic.MessageContentTypeText,
-		Text: srcMessage.Content.Text,
-	})
-	for _, toolCall := range srcMessage.ToolCalls {
-		if function := toolCall.Function; function != nil {
-			dst.Content = append(dst.Content, &anthropic.MessageContent{
-				Type:  anthropic.MessageContentTypeToolUse,
-				ID:    toolCall.ID,
-				Name:  function.Name,
-				Input: json.RawMessage(function.Arguments),
-			})
-		}
-	}
-	return dst, nil
 }
 
 func ConvertOpenRouterFinishReasonToAnthropicStopReason(

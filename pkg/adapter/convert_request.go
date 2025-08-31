@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/samber/lo"
 	"github.com/spf13/viper"
@@ -11,20 +12,15 @@ import (
 )
 
 func init() {
-	viper.SetDefault("strict", false)
+	viper.SetDefault("mapping.strict", false)
+	viper.SetDefault("mapping.reasoning.effort", "medium")
+	viper.SetDefault("mapping.models", map[string]string{})
 }
 
 type ConvertRequestOptions struct {
-	ModelMapper map[string]string
 }
 
 type ConvertRequestOption func(*ConvertRequestOptions)
-
-func WithModelMapper(mapper map[string]string) ConvertRequestOption {
-	return func(o *ConvertRequestOptions) {
-		o.ModelMapper = mapper
-	}
-}
 
 func ConvertAnthropicRequestToOpenRouterRequest(
 	src *anthropic.GenerateMessageRequest,
@@ -42,8 +38,8 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 		TopK:                src.TopK,
 		TopP:                src.TopP,
 	}
-	if convertOptions.ModelMapper != nil {
-		if targetModel, ok := convertOptions.ModelMapper[dst.Model]; ok {
+	if modelMapper := viper.GetStringMapString("mapping.models"); modelMapper != nil {
+		if targetModel, ok := modelMapper[dst.Model]; ok {
 			dst.Model = targetModel
 		}
 	}
@@ -97,7 +93,7 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 					Function: &openrouter.ChatCompletionFunction{
 						Name:        srcTool.Name,
 						Description: srcTool.Description,
-						Strict:      viper.GetBool("strict"),
+						Strict:      viper.GetBool("mapping.strict"),
 						Parameters:  openrouter.ChatCompletionJSONSchemaObject(srcTool.InputSchema),
 					},
 				}
@@ -120,6 +116,7 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 		case anthropic.ThinkingTypeDisabled:
 			reasoning.Enabled = false
 		}
+		reasoning.Effort = openrouter.ChatCompletionReasoningEffort(viper.GetString("mapping.reasoning.effort"))
 		dst.Reasoning = reasoning
 	}
 	dstMessages := make([]*openrouterChatCompletionMessageWrapper, 0, len(src.Messages))
@@ -374,6 +371,34 @@ func canonicalOpenRouterMessages(
 			if len(message.ReasoningDetails) > 0 {
 				for index, reasoningDetail := range message.ReasoningDetails {
 					reasoningDetail.Index = index
+				}
+				switch format := viper.GetString("mapping.reasoning.format"); format {
+				case string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1):
+					refinedReasoningDetails := make([]*openrouter.ChatCompletionMessageReasoningDetail, 0, len(message.ReasoningDetails))
+					for _, reasoningDetail := range message.ReasoningDetails {
+						reasoningDetail.Format = openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1
+						if reasoningDetail.Text != "" {
+							reasoningDetail.Type = openrouter.ChatCompletionMessageReasoningDetailTypeSummary
+						}
+						signature := reasoningDetail.Signature
+						reasoningDetail.Signature = ""
+						refinedReasoningDetails = append(refinedReasoningDetails, reasoningDetail)
+						if signature != "" {
+							derivedReasoningDetail := &openrouter.ChatCompletionMessageReasoningDetail{
+								Type:   openrouter.ChatCompletionMessageReasoningDetailTypeEncrypted,
+								Format: openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1,
+								Index:  reasoningDetail.Index,
+							}
+							if delimiterIndex := strings.Index(signature, viper.GetString("mapping.reasoning.delimiter")); delimiterIndex != -1 {
+								derivedReasoningDetail.ID = signature[:delimiterIndex]
+								derivedReasoningDetail.Data = signature[delimiterIndex+1:]
+							} else {
+								derivedReasoningDetail.Data = signature
+							}
+							refinedReasoningDetails = append(refinedReasoningDetails, derivedReasoningDetail)
+						}
+					}
+					message.ReasoningDetails = refinedReasoningDetails
 				}
 			}
 			if len(message.ToolCalls) > 0 {

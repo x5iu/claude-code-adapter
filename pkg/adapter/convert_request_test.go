@@ -190,8 +190,9 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ToolChoice(t *testing.T) {
 
 func TestConvertAnthropicRequestToOpenRouterRequest_Tools(t *testing.T) {
 	// Set up viper for strict mode testing
-	viper.Set("strict", true)
-	defer viper.Set("strict", false)
+	prevStrict := viper.GetBool("mapping.strict")
+	viper.Set("mapping.strict", true)
+	defer viper.Set("mapping.strict", prevStrict)
 
 	inputSchema := map[string]any{
 		"type": "object",
@@ -1096,62 +1097,18 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ModelMapper(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var options []ConvertRequestOption
+			prev := viper.GetStringMapString("mapping.models")
 			if tt.modelMapper != nil {
-				options = append(options, WithModelMapper(tt.modelMapper))
+				viper.Set("mapping.models", tt.modelMapper)
+			} else {
+				viper.Set("mapping.models", map[string]string{})
 			}
+			defer viper.Set("mapping.models", prev)
 
-			got := ConvertAnthropicRequestToOpenRouterRequest(tt.src, options...)
+			got := ConvertAnthropicRequestToOpenRouterRequest(tt.src)
 
 			if got.Model != tt.wantModel {
 				t.Errorf("ConvertAnthropicRequestToOpenRouterRequest() model = %q, want %q", got.Model, tt.wantModel)
-			}
-		})
-	}
-}
-
-func TestWithModelMapper(t *testing.T) {
-	tests := []struct {
-		name   string
-		mapper map[string]string
-		verify func(*ConvertRequestOptions) bool
-	}{
-		{
-			name: "creates option with mapper",
-			mapper: map[string]string{
-				"model1": "mapped1",
-				"model2": "mapped2",
-			},
-			verify: func(opts *ConvertRequestOptions) bool {
-				return opts.ModelMapper != nil &&
-					opts.ModelMapper["model1"] == "mapped1" &&
-					opts.ModelMapper["model2"] == "mapped2"
-			},
-		},
-		{
-			name:   "creates option with empty mapper",
-			mapper: map[string]string{},
-			verify: func(opts *ConvertRequestOptions) bool {
-				return opts.ModelMapper != nil && len(opts.ModelMapper) == 0
-			},
-		},
-		{
-			name:   "creates option with nil mapper",
-			mapper: nil,
-			verify: func(opts *ConvertRequestOptions) bool {
-				return opts.ModelMapper == nil
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			option := WithModelMapper(tt.mapper)
-			opts := &ConvertRequestOptions{}
-			option(opts)
-
-			if !tt.verify(opts) {
-				t.Errorf("WithModelMapper() option verification failed")
 			}
 		})
 	}
@@ -1198,7 +1155,11 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ModelMapperIntegration(t *te
 			"claude-3-5-sonnet-20241022": "anthropic/claude-3-5-sonnet:beta",
 		}
 
-		got := ConvertAnthropicRequestToOpenRouterRequest(src, WithModelMapper(mapper))
+		prev := viper.GetStringMapString("mapping.models")
+		viper.Set("mapping.models", mapper)
+		defer viper.Set("mapping.models", prev)
+
+		got := ConvertAnthropicRequestToOpenRouterRequest(src)
 
 		// Verify model was mapped
 		if got.Model != "anthropic/claude-3-5-sonnet:beta" {
@@ -1245,7 +1206,11 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ModelMapperIntegration(t *te
 			"claude-3-haiku-20240307":    "anthropic/claude-3-haiku:beta",
 		}
 
-		got := ConvertAnthropicRequestToOpenRouterRequest(src, WithModelMapper(mapper))
+		prev := viper.GetStringMapString("mapping.models")
+		viper.Set("mapping.models", mapper)
+		defer viper.Set("mapping.models", prev)
+
+		got := ConvertAnthropicRequestToOpenRouterRequest(src)
 
 		if got.Model != "anthropic/claude-3-haiku:beta" {
 			t.Errorf("Expected model 'anthropic/claude-3-haiku:beta', got %q", got.Model)
@@ -1508,8 +1473,9 @@ func TestConvertAnthropicRequestToOpenRouterRequest_SystemMessageTypes(t *testin
 
 func TestConvertAnthropicRequestToOpenRouterRequest_ToolTypeNil(t *testing.T) {
 	// Test that a tool with nil Type is treated as custom tool
-	viper.Set("strict", true)
-	defer viper.Set("strict", false)
+	prevStrict := viper.GetBool("mapping.strict")
+	viper.Set("mapping.strict", true)
+	defer viper.Set("mapping.strict", prevStrict)
 
 	inputSchema := map[string]any{
 		"type": "object",

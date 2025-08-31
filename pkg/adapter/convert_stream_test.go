@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/spf13/viper"
+
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
 )
@@ -176,6 +178,7 @@ func TestConvertOpenRouterStreamToAnthropicStream_ContentTypes(t *testing.T) {
 							Delta: &openrouter.ChatCompletionChunkChoiceDelta{
 								ReasoningDetails: []*openrouter.ChatCompletionMessageReasoningDetail{
 									{
+										Type:      openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText,
 										Text:      "Let me think about this",
 										Signature: "sig123",
 									},
@@ -603,8 +606,8 @@ func TestConvertOpenRouterStreamToAnthropicStream_MultipleReasoningDetails(t *te
 				{
 					Delta: &openrouter.ChatCompletionChunkChoiceDelta{
 						ReasoningDetails: []*openrouter.ChatCompletionMessageReasoningDetail{
-							{Text: "First thought", Signature: "sig123"},
-							{Text: "Second thought", Signature: "sig456"},
+							{Type: openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText, Text: "First thought", Signature: "sig123"},
+							{Type: openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText, Text: "Second thought", Signature: "sig456"},
 						},
 					},
 				},
@@ -649,438 +652,104 @@ func TestConvertOpenRouterStreamToAnthropicStream_MultipleReasoningDetails(t *te
 	}
 }
 
-func TestConvertOpenRouterStreamToAnthropicMessage_BasicConversion(t *testing.T) {
-	tests := []struct {
-		name     string
-		chunks   []*openrouter.ChatCompletionChunk
-		validate func(message *anthropic.Message, err error) bool
-	}{
-		{
-			name: "basic text content",
-			chunks: []*openrouter.ChatCompletionChunk{
-				{
-					ID:    "chatcmpl-123",
-					Model: "claude-3-5-sonnet-20241022",
-					Usage: &openrouter.ChatCompletionUsage{
-						PromptTokens:     50,
-						CompletionTokens: 25,
-						TotalTokens:      75,
-					},
-					Choices: []*openrouter.ChatCompletionChunkChoice{
-						{
-							FinishReason: openrouter.ChatCompletionFinishReasonStop,
-							Delta: &openrouter.ChatCompletionChunkChoiceDelta{
-								Role:    openrouter.ChatCompletionMessageRoleAssistant,
-								Content: "Hello world",
-							},
-						},
-					},
-				},
-			},
-			validate: func(message *anthropic.Message, err error) bool {
-				return err == nil &&
-					message != nil &&
-					message.ID == "chatcmpl-123" &&
-					message.Type == anthropic.MessageTypeMessage &&
-					message.Role == anthropic.MessageRoleAssistant &&
-					message.Model == "claude-3-5-sonnet-20241022" &&
-					message.Usage != nil &&
-					message.Usage.InputTokens == 50 &&
-					message.Usage.OutputTokens == 25 &&
-					message.StopReason != nil &&
-					*message.StopReason == anthropic.StopReasonEndTurn &&
-					len(message.Content) == 1 &&
-					message.Content[0].Type == anthropic.MessageContentTypeText &&
-					message.Content[0].Text == "Hello world"
-			},
-		},
-		{
-			name: "with reasoning content",
-			chunks: []*openrouter.ChatCompletionChunk{
-				{
-					ID:    "chatcmpl-456",
-					Model: "claude-3-5-sonnet-20241022",
-					Usage: &openrouter.ChatCompletionUsage{
-						PromptTokens:     100,
-						CompletionTokens: 50,
-						TotalTokens:      150,
-					},
-					Choices: []*openrouter.ChatCompletionChunkChoice{
-						{
-							FinishReason: openrouter.ChatCompletionFinishReasonStop,
-							Delta: &openrouter.ChatCompletionChunkChoiceDelta{
-								Role:    openrouter.ChatCompletionMessageRoleAssistant,
-								Content: "My answer",
-								ReasoningDetails: []*openrouter.ChatCompletionMessageReasoningDetail{
-									{
-										Text:      "Let me think about this carefully",
-										Signature: "sig123",
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			validate: func(message *anthropic.Message, err error) bool {
-				return err == nil &&
-					message != nil &&
-					len(message.Content) == 2 &&
-					message.Content[0].Type == anthropic.MessageContentTypeThinking &&
-					message.Content[0].Thinking == "Let me think about this carefully" &&
-					message.Content[0].Signature == "sig123" &&
-					message.Content[1].Type == anthropic.MessageContentTypeText &&
-					message.Content[1].Text == "My answer"
-			},
-		},
-		{
-			name: "with tool calls",
-			chunks: []*openrouter.ChatCompletionChunk{
-				{
-					ID:    "chatcmpl-789",
-					Model: "claude-3-5-sonnet-20241022",
-					Usage: &openrouter.ChatCompletionUsage{
-						PromptTokens:     75,
-						CompletionTokens: 30,
-						TotalTokens:      105,
-					},
-					Choices: []*openrouter.ChatCompletionChunkChoice{
-						{
-							FinishReason: openrouter.ChatCompletionFinishReasonToolCalls,
-							Delta: &openrouter.ChatCompletionChunkChoiceDelta{
-								Role:    openrouter.ChatCompletionMessageRoleAssistant,
-								Content: "I'll check the weather for you",
-								ToolCalls: []*openrouter.ChatCompletionToolCall{
-									{
-										ID: "tool_456",
-										Function: &openrouter.ChatCompletionMessageToolCallFunction{
-											Name:      "get_weather",
-											Arguments: `{"location": "San Francisco"}`,
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			validate: func(message *anthropic.Message, err error) bool {
-				return err == nil &&
-					message != nil &&
-					message.StopReason != nil &&
-					*message.StopReason == anthropic.StopReasonToolUse &&
-					len(message.Content) == 2 &&
-					message.Content[0].Type == anthropic.MessageContentTypeText &&
-					message.Content[0].Text == "I'll check the weather for you" &&
-					message.Content[1].Type == anthropic.MessageContentTypeToolUse &&
-					message.Content[1].ID == "tool_456" &&
-					message.Content[1].Name == "get_weather" &&
-					string(message.Content[1].Input) == `{"location": "San Francisco"}`
-			},
-		},
+func TestConvertOpenRouterStreamToAnthropicStream_ProviderExtraction(t *testing.T) {
+	providerName := "google-vertex"
+	var orProvider string
+	chunks := []*openrouter.ChatCompletionChunk{{ID: "chatcmpl-x", Model: "m", Provider: providerName}}
+	stream := createMockStream(chunks, nil)
+	anthropicStream := ConvertOpenRouterStreamToAnthropicStream(stream, ExtractOpenRouterProvider(&orProvider))
+	for range anthropicStream {
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			stream := createMockStream(tt.chunks, nil)
-			message, err := ConvertOpenRouterStreamToAnthropicMessage(stream)
-
-			if !tt.validate(message, err) {
-				t.Errorf("Validation failed for test case: %s", tt.name)
-				if message != nil {
-					t.Logf("Message ID: %s, Role: %s, Model: %s", message.ID, message.Role, message.Model)
-					t.Logf("Content length: %d", len(message.Content))
-					if len(message.Content) > 0 {
-						t.Logf("First content type: %s", message.Content[0].Type)
-					}
-				}
-				if err != nil {
-					t.Logf("Error: %v", err)
-				}
-			}
-		})
+	if orProvider != providerName {
+		t.Fatalf("expected %s, got %s", providerName, orProvider)
 	}
 }
 
-func TestConvertOpenRouterStreamToAnthropicMessage_ErrorHandling(t *testing.T) {
-	tests := []struct {
-		name        string
-		chunks      []*openrouter.ChatCompletionChunk
-		streamError error
-		wantError   bool
-		errorMsg    string
-	}{
-		{
-			name:        "stream error propagates",
-			chunks:      nil,
-			streamError: errors.New("connection timeout"),
-			wantError:   true,
-			errorMsg:    "connection timeout",
-		},
-		{
-			name: "no choices error",
-			chunks: []*openrouter.ChatCompletionChunk{
-				{
-					ID:      "chatcmpl-empty",
-					Model:   "claude-3-5-sonnet-20241022",
-					Choices: []*openrouter.ChatCompletionChunkChoice{},
-				},
-			},
-			wantError: true,
-			errorMsg:  "no choices found",
-		},
-		{
-			name:      "empty stream",
-			chunks:    []*openrouter.ChatCompletionChunk{},
-			wantError: true,
-			errorMsg:  "no choices found",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			stream := createMockStream(tt.chunks, tt.streamError)
-			message, err := ConvertOpenRouterStreamToAnthropicMessage(stream)
-
-			if tt.wantError {
-				if err == nil {
-					t.Errorf("Expected error but got none")
-				} else if err.Error() != tt.errorMsg {
-					t.Errorf("Expected error message '%s', got '%s'", tt.errorMsg, err.Error())
-				}
-				if message != nil {
-					t.Errorf("Expected nil message on error, got %v", message)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("Unexpected error: %v", err)
-				}
-				if message == nil {
-					t.Errorf("Expected non-nil message")
-				}
-			}
-		})
-	}
-}
-
-func TestConvertOpenRouterStreamToAnthropicMessage_FinishReasons(t *testing.T) {
-	tests := []struct {
-		name               string
-		finishReason       openrouter.ChatCompletionFinishReason
-		nativeFinishReason string
-		expectedStopReason anthropic.StopReason
-	}{
-		{
-			name:               "native finish reason as fallback for unknown reason",
-			finishReason:       openrouter.ChatCompletionFinishReason("unknown_reason"),
-			nativeFinishReason: "custom_stop",
-			expectedStopReason: anthropic.StopReason("custom_stop"),
-		},
-		{
-			name:               "standard stop reason",
-			finishReason:       openrouter.ChatCompletionFinishReasonStop,
-			expectedStopReason: anthropic.StopReasonEndTurn,
-		},
-		{
-			name:               "length reason",
-			finishReason:       openrouter.ChatCompletionFinishReasonLength,
-			expectedStopReason: anthropic.StopReasonMaxTokens,
-		},
-		{
-			name:               "content filter reason",
-			finishReason:       openrouter.ChatCompletionFinishReasonContentFilter,
-			expectedStopReason: anthropic.StopReasonRefusal,
-		},
-		{
-			name:               "tool calls reason",
-			finishReason:       openrouter.ChatCompletionFinishReasonToolCalls,
-			expectedStopReason: anthropic.StopReasonToolUse,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			chunks := []*openrouter.ChatCompletionChunk{
-				{
-					ID:    "chatcmpl-123",
-					Model: "claude-3-5-sonnet-20241022",
-					Usage: &openrouter.ChatCompletionUsage{
-						PromptTokens:     10,
-						CompletionTokens: 5,
-						TotalTokens:      15,
-					},
-					Choices: []*openrouter.ChatCompletionChunkChoice{
-						{
-							FinishReason:       tt.finishReason,
-							NativeFinishReason: tt.nativeFinishReason,
-							Delta: &openrouter.ChatCompletionChunkChoiceDelta{
-								Role:    openrouter.ChatCompletionMessageRoleAssistant,
-								Content: "test",
-							},
-						},
-					},
-				},
-			}
-
-			stream := createMockStream(chunks, nil)
-			message, err := ConvertOpenRouterStreamToAnthropicMessage(stream)
-
-			if err != nil {
-				t.Fatalf("Unexpected error: %v", err)
-			}
-
-			if message.StopReason == nil {
-				t.Fatalf("Expected stop reason to be set")
-			}
-
-			if *message.StopReason != tt.expectedStopReason {
-				t.Errorf("Expected stop reason %v, got %v", tt.expectedStopReason, *message.StopReason)
-			}
-		})
-	}
-}
-
-func TestConvertOpenRouterStreamToAnthropicMessage_MultipleReasoningDetails(t *testing.T) {
+func TestConvertOpenRouterStreamToAnthropicStream_EncryptedReasoning_CustomDelimiter(t *testing.T) {
+	prev := viper.GetString("mapping.reasoning.delimiter")
+	viper.Set("mapping.reasoning.delimiter", "|")
+	defer viper.Set("mapping.reasoning.delimiter", prev)
 	chunks := []*openrouter.ChatCompletionChunk{
 		{
-			ID:    "chatcmpl-multi",
-			Model: "claude-3-5-sonnet-20241022",
-			Usage: &openrouter.ChatCompletionUsage{
-				PromptTokens:     60,
-				CompletionTokens: 40,
-				TotalTokens:      100,
-			},
+			ID:    "chatcmpl-1",
+			Model: "m",
 			Choices: []*openrouter.ChatCompletionChunkChoice{
-				{
-					FinishReason: openrouter.ChatCompletionFinishReasonStop,
-					Delta: &openrouter.ChatCompletionChunkChoiceDelta{
-						Role:    openrouter.ChatCompletionMessageRoleAssistant,
-						Content: "Final answer",
-						ReasoningDetails: []*openrouter.ChatCompletionMessageReasoningDetail{
-							{
-								Text:      "First reasoning step",
-								Signature: "sig123",
-								Index:     0,
-							},
-							{
-								Text:      "Second reasoning step",
-								Signature: "sig456",
-								Index:     1,
-							},
-						},
-					},
-				},
+				{Delta: &openrouter.ChatCompletionChunkChoiceDelta{ReasoningDetails: []*openrouter.ChatCompletionMessageReasoningDetail{{Type: openrouter.ChatCompletionMessageReasoningDetailTypeEncrypted, ID: "abc", Data: "def"}}}},
 			},
 		},
 	}
-
 	stream := createMockStream(chunks, nil)
-	message, err := ConvertOpenRouterStreamToAnthropicMessage(stream)
-
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
+	var sigs []string
+	for event, err := range ConvertOpenRouterStreamToAnthropicStream(stream) {
+		if err != nil {
+			t.Fatalf("%v", err)
+		}
+		if d, ok := event.(*anthropic.EventContentBlockDelta); ok && d.Delta.Type == anthropic.MessageContentDeltaTypeSignatureDelta {
+			sigs = append(sigs, d.Delta.Signature)
+		}
 	}
-
-	// Should have 3 content blocks: 2 thinking + 1 text
-	if len(message.Content) != 3 {
-		t.Errorf("Expected 3 content blocks, got %d", len(message.Content))
-		return
-	}
-
-	// Check first thinking block
-	if message.Content[0].Type != anthropic.MessageContentTypeThinking ||
-		message.Content[0].Thinking != "First reasoning step" ||
-		message.Content[0].Signature != "sig123" {
-		t.Errorf("First thinking block validation failed")
-	}
-
-	// Check second thinking block
-	if message.Content[1].Type != anthropic.MessageContentTypeThinking ||
-		message.Content[1].Thinking != "Second reasoning step" ||
-		message.Content[1].Signature != "sig456" {
-		t.Errorf("Second thinking block validation failed")
-	}
-
-	// Check text block
-	if message.Content[2].Type != anthropic.MessageContentTypeText ||
-		message.Content[2].Text != "Final answer" {
-		t.Errorf("Text block validation failed")
+	if len(sigs) != 1 || sigs[0] != "abc|def" {
+		t.Fatalf("unexpected signatures: %v", sigs)
 	}
 }
 
-func TestConvertOpenRouterStreamToAnthropicMessage_MultipleToolCalls(t *testing.T) {
+func TestConvertOpenRouterStreamToAnthropicStream_EmptyReasoningAndToolArgs_NoDelta(t *testing.T) {
 	chunks := []*openrouter.ChatCompletionChunk{
 		{
-			ID:    "chatcmpl-tools",
-			Model: "claude-3-5-sonnet-20241022",
-			Usage: &openrouter.ChatCompletionUsage{
-				PromptTokens:     80,
-				CompletionTokens: 60,
-				TotalTokens:      140,
-			},
+			ID:    "chatcmpl-1",
+			Model: "m",
 			Choices: []*openrouter.ChatCompletionChunkChoice{
-				{
-					FinishReason: openrouter.ChatCompletionFinishReasonToolCalls,
-					Delta: &openrouter.ChatCompletionChunkChoiceDelta{
-						Role:    openrouter.ChatCompletionMessageRoleAssistant,
-						Content: "I'll help you with both requests",
-						ToolCalls: []*openrouter.ChatCompletionToolCall{
-							{
-								Index: 0,
-								ID:    "tool_1",
-								Function: &openrouter.ChatCompletionMessageToolCallFunction{
-									Name:      "get_weather",
-									Arguments: `{"location": "NYC"}`,
-								},
-							},
-							{
-								Index: 1,
-								ID:    "tool_2",
-								Function: &openrouter.ChatCompletionMessageToolCallFunction{
-									Name:      "get_time",
-									Arguments: `{"timezone": "EST"}`,
-								},
-							},
-						},
-					},
-				},
+				{Delta: &openrouter.ChatCompletionChunkChoiceDelta{ReasoningDetails: []*openrouter.ChatCompletionMessageReasoningDetail{{Type: openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText, Text: ""}}, ToolCalls: []*openrouter.ChatCompletionToolCall{{ID: "tool_1", Function: &openrouter.ChatCompletionMessageToolCallFunction{Name: "fn", Arguments: ""}}}}},
 			},
 		},
 	}
-
 	stream := createMockStream(chunks, nil)
-	message, err := ConvertOpenRouterStreamToAnthropicMessage(stream)
-
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
+	for event, err := range ConvertOpenRouterStreamToAnthropicStream(stream) {
+		if err != nil {
+			t.Fatalf("%v", err)
+		}
+		if d, ok := event.(*anthropic.EventContentBlockDelta); ok {
+			if d.Delta.Type == anthropic.MessageContentDeltaTypeThinkingDelta || d.Delta.Type == anthropic.MessageContentDeltaTypeInputJSONDelta {
+				t.Fatalf("unexpected delta: %v", d.Delta.Type)
+			}
+		}
 	}
+}
 
-	// Should have 3 content blocks: 1 text + 2 tool_use
-	if len(message.Content) != 3 {
-		t.Errorf("Expected 3 content blocks, got %d", len(message.Content))
-		return
+func TestConvertOpenRouterStreamToAnthropicStream_CrossTypeBlockStop(t *testing.T) {
+	chunks := []*openrouter.ChatCompletionChunk{
+		{ID: "chatcmpl-1", Model: "m", Choices: []*openrouter.ChatCompletionChunkChoice{{Delta: &openrouter.ChatCompletionChunkChoiceDelta{ReasoningDetails: []*openrouter.ChatCompletionMessageReasoningDetail{{Type: openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText, Text: "a"}}}}}},
+		{ID: "chatcmpl-1", Model: "m", Choices: []*openrouter.ChatCompletionChunkChoice{{Delta: &openrouter.ChatCompletionChunkChoiceDelta{Content: "b"}}}},
+		{ID: "chatcmpl-1", Model: "m", Choices: []*openrouter.ChatCompletionChunkChoice{{Delta: &openrouter.ChatCompletionChunkChoiceDelta{ToolCalls: []*openrouter.ChatCompletionToolCall{{ID: "tool_1", Function: &openrouter.ChatCompletionMessageToolCallFunction{Name: "fn", Arguments: "{}"}}}}}}},
 	}
-
-	// Check text block
-	if message.Content[0].Type != anthropic.MessageContentTypeText ||
-		message.Content[0].Text != "I'll help you with both requests" {
-		t.Errorf("Text block validation failed")
+	stream := createMockStream(chunks, nil)
+	var starts []*anthropic.EventContentBlockStart
+	var stops []*anthropic.EventContentBlockStop
+	for event, err := range ConvertOpenRouterStreamToAnthropicStream(stream) {
+		if err != nil {
+			t.Fatalf("%v", err)
+		}
+		switch e := event.(type) {
+		case *anthropic.EventContentBlockStart:
+			starts = append(starts, e)
+		case *anthropic.EventContentBlockStop:
+			stops = append(stops, e)
+		}
 	}
-
-	// Check first tool call
-	if message.Content[1].Type != anthropic.MessageContentTypeToolUse ||
-		message.Content[1].ID != "tool_1" ||
-		message.Content[1].Name != "get_weather" ||
-		string(message.Content[1].Input) != `{"location": "NYC"}` {
-		t.Errorf("First tool call validation failed")
+	if len(starts) != 3 || len(stops) != 3 {
+		t.Fatalf("unexpected counts: %d %d", len(starts), len(stops))
 	}
-
-	// Check second tool call
-	if message.Content[2].Type != anthropic.MessageContentTypeToolUse ||
-		message.Content[2].ID != "tool_2" ||
-		message.Content[2].Name != "get_time" ||
-		string(message.Content[2].Input) != `{"timezone": "EST"}` {
-		t.Errorf("Second tool call validation failed")
+	if starts[0].ContentBlock.Type != anthropic.MessageContentTypeThinking || starts[0].Index != 0 {
+		t.Fatalf("unexpected first start")
+	}
+	if starts[1].ContentBlock.Type != anthropic.MessageContentTypeText || starts[1].Index != 1 {
+		t.Fatalf("unexpected second start")
+	}
+	if starts[2].ContentBlock.Type != anthropic.MessageContentTypeToolUse || starts[2].Index != 2 {
+		t.Fatalf("unexpected third start")
+	}
+	if stops[0].Index != 0 || stops[1].Index != 1 || stops[2].Index != 2 {
+		t.Fatalf("unexpected stop indices: %v %v %v", stops[0].Index, stops[1].Index, stops[2].Index)
 	}
 }
 

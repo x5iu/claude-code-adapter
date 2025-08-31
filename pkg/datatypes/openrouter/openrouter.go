@@ -87,24 +87,24 @@ type ChatCompletionStream iter.Seq2[*ChatCompletionChunk, error]
 // CreateChatCompletionRequest follows OpenRouter request format
 // reference: https://openrouter.ai/docs/api-reference/
 type CreateChatCompletionRequest struct {
-	Messages            []*ChatCompletionMessage      `json:"messages"`
-	Model               string                        `json:"model"`
-	MaxCompletionTokens *int                          `json:"max_completion_tokens,omitempty"`
-	MaxTokens           *int                          `json:"max_tokens,omitempty"`
-	ParallelToolCalls   *bool                         `json:"parallel_tool_calls,omitempty"`
-	ReasoningEffort     *string                       `json:"reasoning_effort,omitempty"`
-	Reasoning           *ChatCompletionReasoning      `json:"reasoning,omitempty"`
-	ResponseFormat      *ChatCompletionResponseFormat `json:"response_format,omitempty"`
-	Stop                ChatCompletionStop            `json:"stop,omitempty"`
-	StreamOptions       *ChatCompletionStreamOptions  `json:"stream_options,omitempty"`
-	Temperature         *float64                      `json:"temperature,omitempty"`
-	ToolChoice          *ChatCompletionToolChoice     `json:"tool_choice,omitempty"`
-	Tools               []*ChatCompletionTool         `json:"tools,omitempty"`
-	TopP                *float64                      `json:"top_p,omitempty"`
-	TopK                *int                          `json:"top_k,omitempty"`
-	User                string                        `json:"user,omitempty"`
-	Stream              utils.True                    `json:"stream"`
-	Provider            *ProviderPreference           `json:"provider,omitempty"`
+	Messages            []*ChatCompletionMessage       `json:"messages"`
+	Model               string                         `json:"model"`
+	MaxCompletionTokens *int                           `json:"max_completion_tokens,omitempty"`
+	MaxTokens           *int                           `json:"max_tokens,omitempty"`
+	ParallelToolCalls   *bool                          `json:"parallel_tool_calls,omitempty"`
+	ReasoningEffort     *ChatCompletionReasoningEffort `json:"reasoning_effort,omitempty"`
+	Reasoning           *ChatCompletionReasoning       `json:"reasoning,omitempty"`
+	ResponseFormat      *ChatCompletionResponseFormat  `json:"response_format,omitempty"`
+	Stop                ChatCompletionStop             `json:"stop,omitempty"`
+	StreamOptions       *ChatCompletionStreamOptions   `json:"stream_options,omitempty"`
+	Temperature         *float64                       `json:"temperature,omitempty"`
+	ToolChoice          *ChatCompletionToolChoice      `json:"tool_choice,omitempty"`
+	Tools               []*ChatCompletionTool          `json:"tools,omitempty"`
+	TopP                *float64                       `json:"top_p,omitempty"`
+	TopK                *int                           `json:"top_k,omitempty"`
+	User                string                         `json:"user,omitempty"`
+	Stream              utils.True                     `json:"stream"`
+	Provider            *ProviderPreference            `json:"provider,omitempty"`
 }
 
 const (
@@ -181,11 +181,19 @@ type ProviderExperimental struct {
 }
 
 type ChatCompletionReasoning struct {
-	Effort    string `json:"effort,omitempty"`
-	MaxTokens int    `json:"max_tokens,omitempty"`
-	Exclude   bool   `json:"exclude,omitempty"`
-	Enabled   bool   `json:"enabled,omitempty"`
+	Effort    ChatCompletionReasoningEffort `json:"effort,omitempty"`
+	MaxTokens int                           `json:"max_tokens,omitempty"`
+	Exclude   bool                          `json:"exclude,omitempty"`
+	Enabled   bool                          `json:"enabled,omitempty"`
 }
+
+type ChatCompletionReasoningEffort string
+
+const (
+	ChatCompletionReasoningEffortLow    ChatCompletionReasoningEffort = "low"
+	ChatCompletionReasoningEffortMedium ChatCompletionReasoningEffort = "medium"
+	ChatCompletionReasoningEffortHigh   ChatCompletionReasoningEffort = "high"
+)
 
 type ChatCompletionStreamOptions struct {
 	IncludeUsage bool `json:"include_usage"`
@@ -341,6 +349,9 @@ const (
 type ChatCompletionMessageReasoningDetail struct {
 	Type      ChatCompletionMessageReasoningDetailType   `json:"type"`
 	Text      string                                     `json:"text"`
+	Summary   string                                     `json:"summary"`
+	ID        string                                     `json:"id"`
+	Data      string                                     `json:"data"`
 	Signature string                                     `json:"signature"`
 	Format    ChatCompletionMessageReasoningDetailFormat `json:"format"`
 	Index     int                                        `json:"index"`
@@ -350,12 +361,15 @@ type ChatCompletionMessageReasoningDetailType string
 
 const (
 	ChatCompletionMessageReasoningDetailTypeReasoningText ChatCompletionMessageReasoningDetailType = "reasoning.text"
+	ChatCompletionMessageReasoningDetailTypeSummary       ChatCompletionMessageReasoningDetailType = "reasoning.summary"
+	ChatCompletionMessageReasoningDetailTypeEncrypted     ChatCompletionMessageReasoningDetailType = "reasoning.encrypted"
 )
 
 type ChatCompletionMessageReasoningDetailFormat string
 
 const (
 	ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1 ChatCompletionMessageReasoningDetailFormat = "anthropic-claude-v1"
+	ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1 ChatCompletionMessageReasoningDetailFormat = "openai-responses-v1"
 )
 
 type ChatCompletionMessageToolCallFunction struct {

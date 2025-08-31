@@ -9,6 +9,7 @@ import (
 )
 
 func init() {
+	viper.SetDefault("provider", "openrouter")
 	viper.SetDefault("openrouter.base_url", "https://openrouter.ai/api")
 	viper.MustBindEnv("openrouter.base_url", "OPENROUTER_BASE_URL")
 	viper.MustBindEnv("openrouter.api_key", "OPENROUTER_API_KEY")
