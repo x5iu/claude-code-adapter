@@ -43,6 +43,7 @@ func ConvertOpenRouterStreamToAnthropicStream(
 	for _, applyOption := range options {
 		applyOption(convertOptions)
 	}
+	contextWindowResizeFactor := viper.GetFloat64("mapping.context_window_resize_factor")
 	return func(yield func(anthropic.Event, error) bool) {
 		var (
 			startOnce  sync.Once
@@ -68,7 +69,7 @@ func ConvertOpenRouterStreamToAnthropicStream(
 						Role:  anthropic.MessageRoleAssistant,
 						Model: chunk.Model,
 						Usage: &anthropic.Usage{
-							InputTokens:  convertOptions.InputTokens,
+							InputTokens:  int64(float64(convertOptions.InputTokens) * contextWindowResizeFactor),
 							OutputTokens: 1,
 						},
 					},
@@ -76,8 +77,8 @@ func ConvertOpenRouterStreamToAnthropicStream(
 			})
 			if chunk.Usage != nil {
 				usage = &anthropic.Usage{
-					InputTokens:  chunk.Usage.PromptTokens,
-					OutputTokens: chunk.Usage.CompletionTokens,
+					InputTokens:  int64(float64(chunk.Usage.PromptTokens) * contextWindowResizeFactor),
+					OutputTokens: int64(float64(chunk.Usage.CompletionTokens) * contextWindowResizeFactor),
 				}
 			}
 			if choices := chunk.Choices; len(choices) > 0 {
