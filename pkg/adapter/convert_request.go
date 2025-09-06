@@ -14,7 +14,7 @@ import (
 func init() {
 	viper.SetDefault("mapping.strict", false)
 	viper.SetDefault("mapping.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
-	viper.SetDefault("mapping.reasoning.effort", "medium")
+	viper.SetDefault("mapping.reasoning.effort", "")
 	viper.SetDefault("mapping.models", map[string]string{})
 }
 
@@ -117,14 +117,27 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 		case anthropic.ThinkingTypeDisabled:
 			reasoning.Enabled = false
 		}
-		reasoning.Effort = openrouter.ChatCompletionReasoningEffort(viper.GetString("mapping.reasoning.effort"))
-		switch format := viper.GetString("mapping.reasoning.format"); format {
-		case string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1):
-			reasoning.Effort = ""
-		case string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1):
-			reasoning.MaxTokens = 0
-		}
 		dst.Reasoning = reasoning
+	}
+	switch format := viper.GetString("mapping.reasoning.format"); format {
+	case string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1):
+		var effort openrouter.ChatCompletionReasoningEffort
+		if model, suffix, ok := strings.Cut(dst.Model, ":"); ok {
+			dst.Model = model
+			effort = openrouter.ChatCompletionReasoningEffort(suffix)
+		} else {
+			effort = openrouter.ChatCompletionReasoningEffort(viper.GetString("mapping.reasoning.effort"))
+		}
+		if !effort.IsEmpty() {
+			if dst.Reasoning == nil {
+				dst.Reasoning = &openrouter.ChatCompletionReasoning{
+					Effort: effort,
+				}
+			} else {
+				dst.Reasoning.MaxTokens = 0
+				dst.Reasoning.Effort = effort
+			}
+		}
 	}
 	dstMessages := make([]*openrouterChatCompletionMessageWrapper, 0, len(src.Messages))
 	if len(src.System) > 0 {

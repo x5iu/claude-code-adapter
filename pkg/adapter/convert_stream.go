@@ -14,6 +14,7 @@ import (
 
 func init() {
 	viper.SetDefault("mapping.reasoning.delimiter", filepath.Separator)
+	viper.SetDefault("mapping.context_window_resize_factor", 1.0)
 }
 
 type ConvertStreamOptions struct {

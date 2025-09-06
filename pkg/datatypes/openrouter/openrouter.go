@@ -190,10 +190,15 @@ type ChatCompletionReasoning struct {
 type ChatCompletionReasoningEffort string
 
 const (
-	ChatCompletionReasoningEffortLow    ChatCompletionReasoningEffort = "low"
-	ChatCompletionReasoningEffortMedium ChatCompletionReasoningEffort = "medium"
-	ChatCompletionReasoningEffortHigh   ChatCompletionReasoningEffort = "high"
+	ChatCompletionReasoningEffortMinimal ChatCompletionReasoningEffort = "minimal"
+	ChatCompletionReasoningEffortLow     ChatCompletionReasoningEffort = "low"
+	ChatCompletionReasoningEffortMedium  ChatCompletionReasoningEffort = "medium"
+	ChatCompletionReasoningEffortHigh    ChatCompletionReasoningEffort = "high"
 )
+
+func (effort ChatCompletionReasoningEffort) IsEmpty() bool {
+	return effort == ""
+}
 
 type ChatCompletionStreamOptions struct {
 	IncludeUsage bool `json:"include_usage"`

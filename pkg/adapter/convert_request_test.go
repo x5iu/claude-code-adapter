@@ -1731,7 +1731,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_OpenAIRespon
 	defer viper.Set("mapping.reasoning.effort", prevEffort)
 
 	src := &anthropic.GenerateMessageRequest{
-		Model:     "claude-3-5-sonnet-20241022",
+		Model:     "gpt-5",
 		MaxTokens: 500,
 		Thinking: &anthropic.Thinking{
 			Type:         anthropic.ThinkingTypeEnabled,
@@ -1749,5 +1749,139 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_OpenAIRespon
 	}
 	if string(got.Reasoning.Effort) != "medium" {
 		t.Errorf("Effort should retain configured value, got %q", got.Reasoning.Effort)
+	}
+}
+
+func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_ModelEffortSuffix(t *testing.T) {
+	prevFormat := viper.GetString("mapping.reasoning.format")
+	prevEffort := viper.GetString("mapping.reasoning.effort")
+	viper.Set("mapping.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
+	viper.Set("mapping.reasoning.effort", "low")
+	defer viper.Set("mapping.reasoning.format", prevFormat)
+	defer viper.Set("mapping.reasoning.effort", prevEffort)
+
+	src := &anthropic.GenerateMessageRequest{
+		Model:     "gpt-5:high",
+		MaxTokens: 500,
+		Thinking: &anthropic.Thinking{
+			Type:         anthropic.ThinkingTypeEnabled,
+			BudgetTokens: 200,
+		},
+		Messages: []*anthropic.Message{},
+	}
+
+	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	if got.Reasoning == nil {
+		t.Fatalf("Reasoning is nil")
+	}
+	if got.Model != "gpt-5" {
+		t.Errorf("Model should drop suffix, got %q", got.Model)
+	}
+	if got.Reasoning.MaxTokens != 0 {
+		t.Errorf("MaxTokens should be zeroed, got %d", got.Reasoning.MaxTokens)
+	}
+	if string(got.Reasoning.Effort) != "high" {
+		t.Errorf("Effort should be parsed from suffix, got %q", got.Reasoning.Effort)
+	}
+}
+
+func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_NoSuffixKeepsConfigEffort(t *testing.T) {
+	prevFormat := viper.GetString("mapping.reasoning.format")
+	prevEffort := viper.GetString("mapping.reasoning.effort")
+	viper.Set("mapping.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
+	viper.Set("mapping.reasoning.effort", "low")
+	defer viper.Set("mapping.reasoning.format", prevFormat)
+	defer viper.Set("mapping.reasoning.effort", prevEffort)
+
+	src := &anthropic.GenerateMessageRequest{
+		Model:     "gpt-5",
+		MaxTokens: 500,
+		Thinking: &anthropic.Thinking{
+			Type:         anthropic.ThinkingTypeEnabled,
+			BudgetTokens: 200,
+		},
+		Messages: []*anthropic.Message{},
+	}
+
+	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	if got.Reasoning == nil {
+		t.Fatalf("Reasoning is nil")
+	}
+	if got.Model != "gpt-5" {
+		t.Errorf("Model should remain unchanged, got %q", got.Model)
+	}
+	if got.Reasoning.MaxTokens != 0 {
+		t.Errorf("MaxTokens should be zeroed, got %d", got.Reasoning.MaxTokens)
+	}
+	if string(got.Reasoning.Effort) != "low" {
+		t.Errorf("Effort should use configured value, got %q", got.Reasoning.Effort)
+	}
+}
+
+func TestConvertAnthropicRequestToOpenRouterRequest_AnthropicClaudeV1_IgnoreSuffixAndKeepModel(t *testing.T) {
+	prevFormat := viper.GetString("mapping.reasoning.format")
+	prevEffort := viper.GetString("mapping.reasoning.effort")
+	viper.Set("mapping.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
+	viper.Set("mapping.reasoning.effort", "high")
+	defer viper.Set("mapping.reasoning.format", prevFormat)
+	defer viper.Set("mapping.reasoning.effort", prevEffort)
+
+	src := &anthropic.GenerateMessageRequest{
+		Model:     "claude-3-7-sonnet-20250219:thinking",
+		MaxTokens: 500,
+		Thinking: &anthropic.Thinking{
+			Type:         anthropic.ThinkingTypeEnabled,
+			BudgetTokens: 123,
+		},
+		Messages: []*anthropic.Message{},
+	}
+
+	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	if got.Reasoning == nil {
+		t.Fatalf("Reasoning is nil")
+	}
+	if got.Model != "claude-3-7-sonnet-20250219:thinking" {
+		t.Errorf("Model should not be split in AnthropicClaudeV1, got %q", got.Model)
+	}
+	if got.Reasoning.Effort != "" {
+		t.Errorf("Effort should be cleared, got %q", got.Reasoning.Effort)
+	}
+	if got.Reasoning.MaxTokens != 123 {
+		t.Errorf("MaxTokens should remain 123, got %d", got.Reasoning.MaxTokens)
+	}
+}
+
+func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_ModelEffortSuffix_NoThinking(t *testing.T) {
+	prevFormat := viper.GetString("mapping.reasoning.format")
+	prevEffort := viper.GetString("mapping.reasoning.effort")
+	viper.Set("mapping.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
+	viper.Set("mapping.reasoning.effort", "low")
+	defer viper.Set("mapping.reasoning.format", prevFormat)
+	defer viper.Set("mapping.reasoning.effort", prevEffort)
+
+	src := &anthropic.GenerateMessageRequest{
+		Model:     "gpt-5:high",
+		MaxTokens: 256,
+		Messages:  []*anthropic.Message{},
+	}
+
+	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	if got.Reasoning == nil {
+		t.Fatalf("Reasoning is nil")
+	}
+	if got.Model != "gpt-5" {
+		t.Errorf("Model should drop suffix, got %q", got.Model)
+	}
+	if got.Reasoning.MaxTokens != 0 {
+		t.Errorf("MaxTokens should be zeroed, got %d", got.Reasoning.MaxTokens)
+	}
+	if string(got.Reasoning.Effort) != "high" {
+		t.Errorf("Effort should be parsed from suffix, got %q", got.Reasoning.Effort)
+	}
+}
+
+func TestDefaultReasoningEffort(t *testing.T) {
+	if effort := openrouter.ChatCompletionReasoningEffort(viper.GetString("mapping.reasoning.effort")); !effort.IsEmpty() {
+		t.Errorf("%q Effort should be empty, got %q", "mapping.reasoning.effort", effort)
 	}
 }
