@@ -190,9 +190,9 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ToolChoice(t *testing.T) {
 
 func TestConvertAnthropicRequestToOpenRouterRequest_Tools(t *testing.T) {
 	// Set up viper for strict mode testing
-	prevStrict := viper.GetBool("mapping.strict")
-	viper.Set("mapping.strict", true)
-	defer viper.Set("mapping.strict", prevStrict)
+	prevStrict := viper.GetBool("options.strict")
+	viper.Set("options.strict", true)
+	defer viper.Set("options.strict", prevStrict)
 
 	inputSchema := map[string]any{
 		"type": "object",
@@ -1097,13 +1097,13 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ModelMapper(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			prev := viper.GetStringMapString("mapping.models")
+			prev := viper.GetStringMapString("options.models")
 			if tt.modelMapper != nil {
-				viper.Set("mapping.models", tt.modelMapper)
+				viper.Set("options.models", tt.modelMapper)
 			} else {
-				viper.Set("mapping.models", map[string]string{})
+				viper.Set("options.models", map[string]string{})
 			}
-			defer viper.Set("mapping.models", prev)
+			defer viper.Set("options.models", prev)
 
 			got := ConvertAnthropicRequestToOpenRouterRequest(tt.src)
 
@@ -1155,9 +1155,9 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ModelMapperIntegration(t *te
 			"claude-3-5-sonnet-20241022": "anthropic/claude-3-5-sonnet:beta",
 		}
 
-		prev := viper.GetStringMapString("mapping.models")
-		viper.Set("mapping.models", mapper)
-		defer viper.Set("mapping.models", prev)
+		prev := viper.GetStringMapString("options.models")
+		viper.Set("options.models", mapper)
+		defer viper.Set("options.models", prev)
 
 		got := ConvertAnthropicRequestToOpenRouterRequest(src)
 
@@ -1206,9 +1206,9 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ModelMapperIntegration(t *te
 			"claude-3-haiku-20240307":    "anthropic/claude-3-haiku:beta",
 		}
 
-		prev := viper.GetStringMapString("mapping.models")
-		viper.Set("mapping.models", mapper)
-		defer viper.Set("mapping.models", prev)
+		prev := viper.GetStringMapString("options.models")
+		viper.Set("options.models", mapper)
+		defer viper.Set("options.models", prev)
 
 		got := ConvertAnthropicRequestToOpenRouterRequest(src)
 
@@ -1473,9 +1473,9 @@ func TestConvertAnthropicRequestToOpenRouterRequest_SystemMessageTypes(t *testin
 
 func TestConvertAnthropicRequestToOpenRouterRequest_ToolTypeNil(t *testing.T) {
 	// Test that a tool with nil Type is treated as custom tool
-	prevStrict := viper.GetBool("mapping.strict")
-	viper.Set("mapping.strict", true)
-	defer viper.Set("mapping.strict", prevStrict)
+	prevStrict := viper.GetBool("options.strict")
+	viper.Set("options.strict", true)
+	defer viper.Set("options.strict", prevStrict)
 
 	inputSchema := map[string]any{
 		"type": "object",
@@ -1693,12 +1693,12 @@ func TestConvertAnthropicRequestToOpenRouterRequest_NewMessageFormat(t *testing.
 }
 
 func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_AnthropicClaudeV1(t *testing.T) {
-	prevFormat := viper.GetString("mapping.reasoning.format")
-	prevEffort := viper.GetString("mapping.reasoning.effort")
-	viper.Set("mapping.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
-	viper.Set("mapping.reasoning.effort", "high")
-	defer viper.Set("mapping.reasoning.format", prevFormat)
-	defer viper.Set("mapping.reasoning.effort", prevEffort)
+	prevFormat := viper.GetString("options.reasoning.format")
+	prevEffort := viper.GetString("options.reasoning.effort")
+	viper.Set("options.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
+	viper.Set("options.reasoning.effort", "high")
+	defer viper.Set("options.reasoning.format", prevFormat)
+	defer viper.Set("options.reasoning.effort", prevEffort)
 
 	src := &anthropic.GenerateMessageRequest{
 		Model:     "claude-3-5-sonnet-20241022",
@@ -1723,12 +1723,12 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_AnthropicCla
 }
 
 func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_OpenAIResponsesV1(t *testing.T) {
-	prevFormat := viper.GetString("mapping.reasoning.format")
-	prevEffort := viper.GetString("mapping.reasoning.effort")
-	viper.Set("mapping.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
-	viper.Set("mapping.reasoning.effort", "medium")
-	defer viper.Set("mapping.reasoning.format", prevFormat)
-	defer viper.Set("mapping.reasoning.effort", prevEffort)
+	prevFormat := viper.GetString("options.reasoning.format")
+	prevEffort := viper.GetString("options.reasoning.effort")
+	viper.Set("options.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
+	viper.Set("options.reasoning.effort", "medium")
+	defer viper.Set("options.reasoning.format", prevFormat)
+	defer viper.Set("options.reasoning.effort", prevEffort)
 
 	src := &anthropic.GenerateMessageRequest{
 		Model:     "gpt-5",
@@ -1753,12 +1753,12 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_OpenAIRespon
 }
 
 func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_ModelEffortSuffix(t *testing.T) {
-	prevFormat := viper.GetString("mapping.reasoning.format")
-	prevEffort := viper.GetString("mapping.reasoning.effort")
-	viper.Set("mapping.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
-	viper.Set("mapping.reasoning.effort", "low")
-	defer viper.Set("mapping.reasoning.format", prevFormat)
-	defer viper.Set("mapping.reasoning.effort", prevEffort)
+	prevFormat := viper.GetString("options.reasoning.format")
+	prevEffort := viper.GetString("options.reasoning.effort")
+	viper.Set("options.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
+	viper.Set("options.reasoning.effort", "low")
+	defer viper.Set("options.reasoning.format", prevFormat)
+	defer viper.Set("options.reasoning.effort", prevEffort)
 
 	src := &anthropic.GenerateMessageRequest{
 		Model:     "gpt-5:high",
@@ -1786,12 +1786,12 @@ func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_ModelEffor
 }
 
 func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_NoSuffixKeepsConfigEffort(t *testing.T) {
-	prevFormat := viper.GetString("mapping.reasoning.format")
-	prevEffort := viper.GetString("mapping.reasoning.effort")
-	viper.Set("mapping.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
-	viper.Set("mapping.reasoning.effort", "low")
-	defer viper.Set("mapping.reasoning.format", prevFormat)
-	defer viper.Set("mapping.reasoning.effort", prevEffort)
+	prevFormat := viper.GetString("options.reasoning.format")
+	prevEffort := viper.GetString("options.reasoning.effort")
+	viper.Set("options.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
+	viper.Set("options.reasoning.effort", "low")
+	defer viper.Set("options.reasoning.format", prevFormat)
+	defer viper.Set("options.reasoning.effort", prevEffort)
 
 	src := &anthropic.GenerateMessageRequest{
 		Model:     "gpt-5",
@@ -1819,12 +1819,12 @@ func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_NoSuffixKe
 }
 
 func TestConvertAnthropicRequestToOpenRouterRequest_AnthropicClaudeV1_IgnoreSuffixAndKeepModel(t *testing.T) {
-	prevFormat := viper.GetString("mapping.reasoning.format")
-	prevEffort := viper.GetString("mapping.reasoning.effort")
-	viper.Set("mapping.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
-	viper.Set("mapping.reasoning.effort", "high")
-	defer viper.Set("mapping.reasoning.format", prevFormat)
-	defer viper.Set("mapping.reasoning.effort", prevEffort)
+	prevFormat := viper.GetString("options.reasoning.format")
+	prevEffort := viper.GetString("options.reasoning.effort")
+	viper.Set("options.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
+	viper.Set("options.reasoning.effort", "high")
+	defer viper.Set("options.reasoning.format", prevFormat)
+	defer viper.Set("options.reasoning.effort", prevEffort)
 
 	src := &anthropic.GenerateMessageRequest{
 		Model:     "claude-3-7-sonnet-20250219:thinking",
@@ -1852,12 +1852,12 @@ func TestConvertAnthropicRequestToOpenRouterRequest_AnthropicClaudeV1_IgnoreSuff
 }
 
 func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_ModelEffortSuffix_NoThinking(t *testing.T) {
-	prevFormat := viper.GetString("mapping.reasoning.format")
-	prevEffort := viper.GetString("mapping.reasoning.effort")
-	viper.Set("mapping.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
-	viper.Set("mapping.reasoning.effort", "low")
-	defer viper.Set("mapping.reasoning.format", prevFormat)
-	defer viper.Set("mapping.reasoning.effort", prevEffort)
+	prevFormat := viper.GetString("options.reasoning.format")
+	prevEffort := viper.GetString("options.reasoning.effort")
+	viper.Set("options.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
+	viper.Set("options.reasoning.effort", "low")
+	defer viper.Set("options.reasoning.format", prevFormat)
+	defer viper.Set("options.reasoning.effort", prevEffort)
 
 	src := &anthropic.GenerateMessageRequest{
 		Model:     "gpt-5:high",
@@ -1881,7 +1881,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_ModelEffor
 }
 
 func TestDefaultReasoningEffort(t *testing.T) {
-	if effort := openrouter.ChatCompletionReasoningEffort(viper.GetString("mapping.reasoning.effort")); !effort.IsEmpty() {
-		t.Errorf("%q Effort should be empty, got %q", "mapping.reasoning.effort", effort)
+	if effort := openrouter.ChatCompletionReasoningEffort(viper.GetString("options.reasoning.effort")); !effort.IsEmpty() {
+		t.Errorf("%q Effort should be empty, got %q", "options.reasoning.effort", effort)
 	}
 }

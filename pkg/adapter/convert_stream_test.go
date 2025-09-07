@@ -666,9 +666,9 @@ func TestConvertOpenRouterStreamToAnthropicStream_ProviderExtraction(t *testing.
 }
 
 func TestConvertOpenRouterStreamToAnthropicStream_EncryptedReasoning_CustomDelimiter(t *testing.T) {
-	prev := viper.GetString("mapping.reasoning.delimiter")
-	viper.Set("mapping.reasoning.delimiter", "|")
-	defer viper.Set("mapping.reasoning.delimiter", prev)
+	prev := viper.GetString("options.reasoning.delimiter")
+	viper.Set("options.reasoning.delimiter", "|")
+	defer viper.Set("options.reasoning.delimiter", prev)
 	chunks := []*openrouter.ChatCompletionChunk{
 		{
 			ID:    "chatcmpl-1",

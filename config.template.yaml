@@ -3,7 +3,7 @@ provider: "openrouter"
 http:
   port: 2194
 
-mapping:
+options:
   strict: false
   reasoning:
     format: "anthropic-claude-v1"

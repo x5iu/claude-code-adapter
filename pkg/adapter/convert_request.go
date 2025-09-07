@@ -12,10 +12,10 @@ import (
 )
 
 func init() {
-	viper.SetDefault("mapping.strict", false)
-	viper.SetDefault("mapping.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
-	viper.SetDefault("mapping.reasoning.effort", "")
-	viper.SetDefault("mapping.models", map[string]string{})
+	viper.SetDefault("options.strict", false)
+	viper.SetDefault("options.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
+	viper.SetDefault("options.reasoning.effort", "")
+	viper.SetDefault("options.models", map[string]string{})
 }
 
 type ConvertRequestOptions struct {
@@ -40,7 +40,7 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 		TopP:                src.TopP,
 		Usage:               &openrouter.ChatCompletionUsageOptions{Include: true},
 	}
-	if modelMapper := viper.GetStringMapString("mapping.models"); modelMapper != nil {
+	if modelMapper := viper.GetStringMapString("options.models"); modelMapper != nil {
 		if targetModel, ok := modelMapper[dst.Model]; ok {
 			dst.Model = targetModel
 		}
@@ -95,7 +95,7 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 					Function: &openrouter.ChatCompletionFunction{
 						Name:        srcTool.Name,
 						Description: srcTool.Description,
-						Strict:      viper.GetBool("mapping.strict"),
+						Strict:      viper.GetBool("options.strict"),
 						Parameters:  openrouter.ChatCompletionJSONSchemaObject(srcTool.InputSchema),
 					},
 				}
@@ -120,14 +120,14 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 		}
 		dst.Reasoning = reasoning
 	}
-	switch format := viper.GetString("mapping.reasoning.format"); format {
+	switch format := viper.GetString("options.reasoning.format"); format {
 	case string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1):
 		var effort openrouter.ChatCompletionReasoningEffort
 		if model, suffix, ok := strings.Cut(dst.Model, ":"); ok {
 			dst.Model = model
 			effort = openrouter.ChatCompletionReasoningEffort(suffix)
 		} else {
-			effort = openrouter.ChatCompletionReasoningEffort(viper.GetString("mapping.reasoning.effort"))
+			effort = openrouter.ChatCompletionReasoningEffort(viper.GetString("options.reasoning.effort"))
 		}
 		if !effort.IsEmpty() {
 			if dst.Reasoning == nil {
@@ -393,7 +393,7 @@ func canonicalOpenRouterMessages(
 				for index, reasoningDetail := range message.ReasoningDetails {
 					reasoningDetail.Index = index
 				}
-				switch format := viper.GetString("mapping.reasoning.format"); format {
+				switch format := viper.GetString("options.reasoning.format"); format {
 				case string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1):
 					refinedReasoningDetails := make([]*openrouter.ChatCompletionMessageReasoningDetail, 0, len(message.ReasoningDetails))
 					for _, reasoningDetail := range message.ReasoningDetails {
@@ -410,7 +410,7 @@ func canonicalOpenRouterMessages(
 								Format: openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1,
 								Index:  reasoningDetail.Index,
 							}
-							if delimiterIndex := strings.Index(signature, viper.GetString("mapping.reasoning.delimiter")); delimiterIndex != -1 {
+							if delimiterIndex := strings.Index(signature, viper.GetString("options.reasoning.delimiter")); delimiterIndex != -1 {
 								derivedReasoningDetail.ID = signature[:delimiterIndex]
 								derivedReasoningDetail.Data = signature[delimiterIndex+1:]
 							} else {
