@@ -121,6 +121,18 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 		dst.Reasoning = reasoning
 	}
 	switch format := viper.GetString("options.reasoning.format"); format {
+	case string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1):
+		if dst.Reasoning == nil {
+			if viper.GetBool("anthropic.force_thinking") {
+				if dst.MaxTokens == nil || *dst.MaxTokens <= 1024 {
+					dst.MaxTokens = lo.ToPtr(32 * 1024)
+				}
+				dst.Reasoning = &openrouter.ChatCompletionReasoning{
+					Enabled:   true,
+					MaxTokens: *dst.MaxTokens - 1,
+				}
+			}
+		}
 	case string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1):
 		var effort openrouter.ChatCompletionReasoningEffort
 		if model, suffix, ok := strings.Cut(dst.Model, ":"); ok {

@@ -1885,3 +1885,91 @@ func TestDefaultReasoningEffort(t *testing.T) {
 		t.Errorf("%q Effort should be empty, got %q", "options.reasoning.effort", effort)
 	}
 }
+
+func TestForceThinking_AnthropicClaudeV1_NoReasoningAddsReasoning(t *testing.T) {
+	prevFormat := viper.GetString("options.reasoning.format")
+	prevForce := viper.GetBool("anthropic.force_thinking")
+	viper.Set("options.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
+	viper.Set("anthropic.force_thinking", true)
+	defer viper.Set("options.reasoning.format", prevFormat)
+	defer viper.Set("anthropic.force_thinking", prevForce)
+
+	src := &anthropic.GenerateMessageRequest{
+		Model:     "claude-3-5-sonnet-20241022",
+		MaxTokens: 0,
+		Messages:  []*anthropic.Message{},
+	}
+
+	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+
+	if got.Reasoning == nil || !got.Reasoning.Enabled {
+		t.Fatalf("force thinking should enable reasoning")
+	}
+	if got.MaxTokens == nil || *got.MaxTokens != 32*1024 {
+		t.Errorf("MaxTokens should be set to 32768, got %v", lo.FromPtr(got.MaxTokens))
+	}
+	if got.Reasoning.MaxTokens != 32*1024-1 {
+		t.Errorf("Reasoning.MaxTokens should be 32767, got %d", got.Reasoning.MaxTokens)
+	}
+}
+
+func TestForceThinking_DoesNotOverrideExistingReasoning(t *testing.T) {
+	prevFormat := viper.GetString("options.reasoning.format")
+	prevForce := viper.GetBool("anthropic.force_thinking")
+	viper.Set("options.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
+	viper.Set("anthropic.force_thinking", true)
+	defer viper.Set("options.reasoning.format", prevFormat)
+	defer viper.Set("anthropic.force_thinking", prevForce)
+
+	src := &anthropic.GenerateMessageRequest{
+		Model:     "claude-3-5-sonnet-20241022",
+		MaxTokens: 1000,
+		Thinking: &anthropic.Thinking{Type: anthropic.ThinkingTypeEnabled, BudgetTokens: 1234},
+		Messages: []*anthropic.Message{},
+	}
+
+	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+
+	if got.Reasoning == nil || !got.Reasoning.Enabled {
+		t.Fatalf("Reasoning should remain enabled from source")
+	}
+	if got.Reasoning.MaxTokens != 1234 {
+		t.Errorf("Existing Reasoning.MaxTokens should be preserved, got %d", got.Reasoning.MaxTokens)
+	}
+}
+
+func TestForceThinking_MaxTokensBoundaries(t *testing.T) {
+	prevFormat := viper.GetString("options.reasoning.format")
+	prevForce := viper.GetBool("anthropic.force_thinking")
+	viper.Set("options.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
+	viper.Set("anthropic.force_thinking", true)
+	defer viper.Set("options.reasoning.format", prevFormat)
+	defer viper.Set("anthropic.force_thinking", prevForce)
+
+	srcSmall := &anthropic.GenerateMessageRequest{Model: "claude-3-5-sonnet-20241022", MaxTokens: 10, Messages: []*anthropic.Message{}}
+	gotSmall := ConvertAnthropicRequestToOpenRouterRequest(srcSmall)
+	if gotSmall.Reasoning == nil || !gotSmall.Reasoning.Enabled {
+		t.Fatalf("force thinking should enable reasoning (small)")
+	}
+	if gotSmall.MaxTokens == nil || *gotSmall.MaxTokens != 32*1024 {
+		t.Errorf("MaxTokens should be promoted to 32768 when <=1024, got %v", lo.FromPtr(gotSmall.MaxTokens))
+	}
+	if gotSmall.Reasoning.MaxTokens != 32*1024-1 {
+		t.Errorf("Reasoning.MaxTokens should be 32767, got %d", gotSmall.Reasoning.MaxTokens)
+	}
+
+	srcLarge := &anthropic.GenerateMessageRequest{Model: "claude-3-5-sonnet-20241022", MaxTokens: 100000, Messages: []*anthropic.Message{}}
+	gotLarge := ConvertAnthropicRequestToOpenRouterRequest(srcLarge)
+	if gotLarge.Reasoning == nil || !gotLarge.Reasoning.Enabled {
+		t.Fatalf("force thinking should enable reasoning (large)")
+	}
+	if gotLarge.MaxTokens == nil || *gotLarge.MaxTokens != 100000 {
+		t.Errorf("MaxTokens should remain 100000, got %v", lo.FromPtr(gotLarge.MaxTokens))
+	}
+	if gotLarge.Reasoning.MaxTokens != 99999 {
+		t.Errorf("Reasoning.MaxTokens should be MaxTokens-1 (99999), got %d", gotLarge.Reasoning.MaxTokens)
+	}
+	if gotLarge.MaxTokens == nil || *gotLarge.MaxTokens != 100000 {
+		t.Errorf("Original MaxTokens should remain 100000, got %v", lo.FromPtr(gotLarge.MaxTokens))
+	}
+}
