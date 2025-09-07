@@ -178,23 +178,25 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 				tool.Type = lo.ToPtr(anthropic.ToolTypeCustom)
 			}
 		}
-		usage, err := p.CountAnthropicTokens(countTokensCtx, &anthropic.CountTokensRequest{
-			System:     req.System,
-			Model:      req.Model,
-			Messages:   req.Messages,
-			Thinking:   req.Thinking,
-			ToolChoice: req.ToolChoice,
-			Tools:      req.Tools,
-		})
-		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) {
-				slog.Warn(fmt.Sprintf("[%d] token calculation timed out", requestID))
+		if !viper.GetBool("options.disable_count_tokens_request") {
+			usage, err := p.CountAnthropicTokens(countTokensCtx, &anthropic.CountTokensRequest{
+				System:     req.System,
+				Model:      req.Model,
+				Messages:   req.Messages,
+				Thinking:   req.Thinking,
+				ToolChoice: req.ToolChoice,
+				Tools:      req.Tools,
+			})
+			if err != nil {
+				if errors.Is(err, context.DeadlineExceeded) {
+					slog.Warn(fmt.Sprintf("[%d] token calculation timed out", requestID))
+				} else {
+					slog.Error(fmt.Sprintf("[%d] error making CountAnthropicTokens request: %s", requestID, err.Error()))
+				}
 			} else {
-				slog.Error(fmt.Sprintf("[%d] error making CountAnthropicTokens request: %s", requestID, err.Error()))
+				inputTokens = usage.InputTokens
+				slog.Info(fmt.Sprintf("[%d] request input tokens (estimated): %d", requestID, inputTokens))
 			}
-		} else {
-			inputTokens = usage.InputTokens
-			slog.Info(fmt.Sprintf("[%d] request input tokens (estimated): %d", requestID, inputTokens))
 		}
 		hasServerTools := func() bool {
 			return lo.ContainsBy(req.Tools, func(tool *anthropic.Tool) bool {
