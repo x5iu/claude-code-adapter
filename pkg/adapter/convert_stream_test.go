@@ -753,6 +753,39 @@ func TestConvertOpenRouterStreamToAnthropicStream_CrossTypeBlockStop(t *testing.
 	}
 }
 
+func TestConvertOpenRouterStreamToAnthropicStream_CacheReadInputTokens_TwoRequests(t *testing.T) {
+	mk := func(cached int64) openrouter.ChatCompletionStream {
+		chunks := []*openrouter.ChatCompletionChunk{
+			{ID: "chatcmpl-1", Model: "m", Usage: &openrouter.ChatCompletionUsage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15, PromptTokensDetails: &openrouter.ChatCompletionPromptTokensDetails{CachedTokens: cached}}},
+			{ID: "chatcmpl-1", Model: "m", Choices: []*openrouter.ChatCompletionChunkChoice{{FinishReason: openrouter.ChatCompletionFinishReasonStop}}},
+		}
+		return createMockStream(chunks, nil)
+	}
+	var first, second int64
+	for event, err := range ConvertOpenRouterStreamToAnthropicStream(mk(0)) {
+		if err != nil {
+			t.Fatalf("%v", err)
+		}
+		if d, ok := event.(*anthropic.EventMessageDelta); ok && d.Delta != nil && d.Delta.Usage != nil {
+			first = d.Delta.Usage.CacheReadInputTokens
+		}
+	}
+	for event, err := range ConvertOpenRouterStreamToAnthropicStream(mk(32)) {
+		if err != nil {
+			t.Fatalf("%v", err)
+		}
+		if d, ok := event.(*anthropic.EventMessageDelta); ok && d.Delta != nil && d.Delta.Usage != nil {
+			second = d.Delta.Usage.CacheReadInputTokens
+		}
+	}
+	if first != 0 {
+		t.Fatalf("expected 0, got %d", first)
+	}
+	if second <= 0 {
+		t.Fatalf("expected >0, got %d", second)
+	}
+}
+
 // Helper function to create a mock OpenRouter stream
 func createMockStream(chunks []*openrouter.ChatCompletionChunk, err error) openrouter.ChatCompletionStream {
 	return func(yield func(*openrouter.ChatCompletionChunk, error) bool) {

@@ -81,6 +81,9 @@ func ConvertOpenRouterStreamToAnthropicStream(
 					InputTokens:  int64(float64(chunk.Usage.PromptTokens) * contextWindowResizeFactor),
 					OutputTokens: int64(float64(chunk.Usage.CompletionTokens) * contextWindowResizeFactor),
 				}
+				if promptTokensDetails := chunk.Usage.PromptTokensDetails; promptTokensDetails != nil {
+					usage.CacheReadInputTokens = int64(float64(promptTokensDetails.CachedTokens) * contextWindowResizeFactor)
+				}
 			}
 			if choices := chunk.Choices; len(choices) > 0 {
 				choice := choices[0]

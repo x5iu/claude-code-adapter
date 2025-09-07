@@ -38,6 +38,7 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 		Temperature:         lo.ToPtr(src.Temperature),
 		TopK:                src.TopK,
 		TopP:                src.TopP,
+		Usage:               &openrouter.ChatCompletionUsageOptions{Include: true},
 	}
 	if modelMapper := viper.GetStringMapString("mapping.models"); modelMapper != nil {
 		if targetModel, ok := modelMapper[dst.Model]; ok {

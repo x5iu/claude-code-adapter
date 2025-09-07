@@ -543,6 +543,69 @@ func TestCreateOpenRouterChatCompletion_ReasoningValidation(t *testing.T) {
 }
 
 // validateChatCompletionChunk validates the structure of a ChatCompletionChunk
+func TestCreateOpenRouterChatCompletion_CachedTokensAcrossRequests(t *testing.T) {
+	if viper.GetString("openrouter.api_key") == "" {
+		t.Skip("OPENROUTER_API_KEY not set, skipping integration test")
+	}
+	provider := NewProvider()
+	ctx := context.Background()
+	mkReq := func() *openrouter.CreateChatCompletionRequest {
+		lp := strings.Repeat("这是一段用于缓存测试的长提示。", 500)
+		return &openrouter.CreateChatCompletionRequest{
+			Model: "anthropic/claude-sonnet-4",
+			Messages: []*openrouter.ChatCompletionMessage{
+				{
+					Role: openrouter.ChatCompletionMessageRoleUser,
+					Content: &openrouter.ChatCompletionMessageContent{
+						Type: openrouter.ChatCompletionMessageContentTypeParts,
+						Parts: []*openrouter.ChatCompletionMessageContentPart{
+							{
+								Type: openrouter.ChatCompletionMessageContentPartTypeText,
+								Text: lp,
+								CacheControl: &openrouter.ChatCompletionMessageCacheControl{Type: "ephemeral", TTL: "5m"},
+							},
+						},
+					},
+				},
+			},
+			MaxCompletionTokens: lo.ToPtr(64),
+			StreamOptions:       &openrouter.ChatCompletionStreamOptions{IncludeUsage: true},
+		}
+	}
+	getCached := func() (int64, error) {
+		pref := openrouter.ProviderPreference{Only: []string{openrouter.ProviderAnthropic}}
+		stream, _, err := provider.CreateOpenRouterChatCompletion(ctx, mkReq(), openrouter.WithProviderPreference(&pref))
+		if err != nil {
+			return 0, err
+		}
+		var cached int64
+		for chunk, streamErr := range stream {
+			if streamErr != nil {
+				return 0, streamErr
+			}
+			if chunk != nil && chunk.Usage != nil && chunk.Usage.PromptTokensDetails != nil {
+				cached = chunk.Usage.PromptTokensDetails.CachedTokens
+			}
+		}
+		return cached, nil
+	}
+	first, err := getCached()
+	if err != nil {
+		t.Fatalf("first request failed: %v", err)
+	}
+	second, err := getCached()
+	if err != nil {
+		t.Fatalf("second request failed: %v", err)
+	}
+	t.Logf("cached_tokens first=%d second=%d", first, second)
+	if second == 0 && first == 0 {
+		t.Skipf("provider did not report cached_tokens; first=%d second=%d", first, second)
+	}
+	if second < first {
+		t.Fatalf("expected cached tokens to be non-decreasing, got first=%d second=%d", first, second)
+	}
+}
+
 func validateChatCompletionChunk(t *testing.T, chunk *openrouter.ChatCompletionChunk) {
 	t.Helper()
 

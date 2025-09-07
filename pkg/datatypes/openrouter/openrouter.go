@@ -105,6 +105,7 @@ type CreateChatCompletionRequest struct {
 	User                string                         `json:"user,omitempty"`
 	Stream              utils.True                     `json:"stream"`
 	Provider            *ProviderPreference            `json:"provider,omitempty"`
+	Usage               *ChatCompletionUsageOptions    `json:"usage,omitempty"`
 }
 
 const (
@@ -198,6 +199,10 @@ const (
 
 func (effort ChatCompletionReasoningEffort) IsEmpty() bool {
 	return effort == ""
+}
+
+type ChatCompletionUsageOptions struct {
+	Include bool `json:"include"`
 }
 
 type ChatCompletionStreamOptions struct {
@@ -491,9 +496,30 @@ type ChatCompletionLogprob struct {
 }
 
 type ChatCompletionUsage struct {
-	PromptTokens     int64 `json:"prompt_tokens"`
-	CompletionTokens int64 `json:"completion_tokens"`
-	TotalTokens      int64 `json:"total_tokens"`
+	PromptTokens            int64                                  `json:"prompt_tokens"`
+	CompletionTokens        int64                                  `json:"completion_tokens"`
+	TotalTokens             int64                                  `json:"total_tokens"`
+	Cost                    json.Number                            `json:"cost,omitempty"`
+	IsByok                  bool                                   `json:"is_byok,omitempty"`
+	PromptTokensDetails     *ChatCompletionPromptTokensDetails     `json:"prompt_tokens_details,omitempty"`
+	CostDetails             *ChatCompletionCostDetails             `json:"cost_details,omitempty"`
+	CompletionTokensDetails *ChatCompletionCompletionTokensDetails `json:"completion_tokens_details,omitempty"`
+}
+
+type ChatCompletionPromptTokensDetails struct {
+	CachedTokens int64 `json:"cached_tokens"`
+	AudioTokens  int64 `json:"audio_tokens"`
+}
+
+type ChatCompletionCostDetails struct {
+	UpstreamInferenceCost            *json.Number `json:"upstream_inference_cost"`
+	UpstreamInferencePromptCost      json.Number  `json:"upstream_inference_prompt_cost"`
+	UpstreamInferenceCompletionsCost json.Number  `json:"upstream_inference_completions_cost"`
+}
+
+type ChatCompletionCompletionTokensDetails struct {
+	ReasoningTokens int64 `json:"reasoning_tokens"`
+	ImageTokens     int64 `json:"image_tokens"`
 }
 
 type ChatCompletion struct {
@@ -606,6 +632,27 @@ func (builder *ChatCompletionBuilder) Add(chunk *ChatCompletionChunk) {
 				PromptTokens:     chunk.Usage.PromptTokens,
 				CompletionTokens: chunk.Usage.CompletionTokens,
 				TotalTokens:      chunk.Usage.TotalTokens,
+				Cost:             chunk.Usage.Cost,
+				IsByok:           chunk.Usage.IsByok,
+			}
+			if chunk.Usage.PromptTokensDetails != nil {
+				builder.Usage.PromptTokensDetails = &ChatCompletionPromptTokensDetails{
+					CachedTokens: chunk.Usage.PromptTokensDetails.CachedTokens,
+					AudioTokens:  chunk.Usage.PromptTokensDetails.AudioTokens,
+				}
+			}
+			if chunk.Usage.CostDetails != nil {
+				builder.Usage.CostDetails = &ChatCompletionCostDetails{
+					UpstreamInferenceCost:            chunk.Usage.CostDetails.UpstreamInferenceCost,
+					UpstreamInferencePromptCost:      chunk.Usage.CostDetails.UpstreamInferencePromptCost,
+					UpstreamInferenceCompletionsCost: chunk.Usage.CostDetails.UpstreamInferenceCompletionsCost,
+				}
+			}
+			if chunk.Usage.CompletionTokensDetails != nil {
+				builder.Usage.CompletionTokensDetails = &ChatCompletionCompletionTokensDetails{
+					ReasoningTokens: chunk.Usage.CompletionTokensDetails.ReasoningTokens,
+					ImageTokens:     chunk.Usage.CompletionTokensDetails.ImageTokens,
+				}
 			}
 		} else {
 			if chunk.Usage.PromptTokens > 0 {
@@ -616,6 +663,36 @@ func (builder *ChatCompletionBuilder) Add(chunk *ChatCompletionChunk) {
 			}
 			if chunk.Usage.TotalTokens > 0 {
 				builder.Usage.TotalTokens = chunk.Usage.TotalTokens
+			}
+			if chunk.Usage.Cost != "" {
+				if cf, err := chunk.Usage.Cost.Float64(); err == nil && cf > 0 {
+					builder.Usage.Cost = chunk.Usage.Cost
+				}
+			}
+			if chunk.Usage.IsByok {
+				builder.Usage.IsByok = true
+			}
+			if chunk.Usage.PromptTokensDetails != nil {
+				if builder.Usage.PromptTokensDetails == nil {
+					builder.Usage.PromptTokensDetails = &ChatCompletionPromptTokensDetails{}
+				}
+				builder.Usage.PromptTokensDetails.CachedTokens = chunk.Usage.PromptTokensDetails.CachedTokens
+				builder.Usage.PromptTokensDetails.AudioTokens = chunk.Usage.PromptTokensDetails.AudioTokens
+			}
+			if chunk.Usage.CostDetails != nil {
+				if builder.Usage.CostDetails == nil {
+					builder.Usage.CostDetails = &ChatCompletionCostDetails{}
+				}
+				builder.Usage.CostDetails.UpstreamInferenceCost = chunk.Usage.CostDetails.UpstreamInferenceCost
+				builder.Usage.CostDetails.UpstreamInferencePromptCost = chunk.Usage.CostDetails.UpstreamInferencePromptCost
+				builder.Usage.CostDetails.UpstreamInferenceCompletionsCost = chunk.Usage.CostDetails.UpstreamInferenceCompletionsCost
+			}
+			if chunk.Usage.CompletionTokensDetails != nil {
+				if builder.Usage.CompletionTokensDetails == nil {
+					builder.Usage.CompletionTokensDetails = &ChatCompletionCompletionTokensDetails{}
+				}
+				builder.Usage.CompletionTokensDetails.ReasoningTokens = chunk.Usage.CompletionTokensDetails.ReasoningTokens
+				builder.Usage.CompletionTokensDetails.ImageTokens = chunk.Usage.CompletionTokensDetails.ImageTokens
 			}
 		}
 	}
@@ -679,6 +756,9 @@ type ChatCompletionMessageBuilder struct {
 }
 
 func (builder *ChatCompletionMessageBuilder) Build() *ChatCompletionMessage {
+	if builder == nil {
+		return nil
+	}
 	var refusal *string
 	if builder.Refusal == nil {
 		refusal = nil
@@ -694,10 +774,14 @@ func (builder *ChatCompletionMessageBuilder) Build() *ChatCompletionMessage {
 		ReasoningDetails: make([]*ChatCompletionMessageReasoningDetail, len(builder.ReasoningDetails)),
 	}
 	for i, toolCall := range builder.ToolCalls {
-		c.ToolCalls[i] = toolCall.Build()
+		if toolCall != nil {
+			c.ToolCalls[i] = toolCall.Build()
+		}
 	}
 	for i, reasoningDetail := range builder.ReasoningDetails {
-		c.ReasoningDetails[i] = reasoningDetail.Build()
+		if reasoningDetail != nil {
+			c.ReasoningDetails[i] = reasoningDetail.Build()
+		}
 	}
 	return c
 }
@@ -741,10 +825,17 @@ type ChatCompletionMessageToolCallBuilder struct {
 }
 
 func (builder *ChatCompletionMessageToolCallBuilder) Build() *ChatCompletionToolCall {
+	if builder == nil {
+		return nil
+	}
+	var fn *ChatCompletionMessageToolCallFunction
+	if builder.Function != nil {
+		fn = builder.Function.Build()
+	}
 	c := &ChatCompletionToolCall{
 		ID:       builder.ID,
 		Type:     builder.Type,
-		Function: builder.Function.Build(),
+		Function: fn,
 	}
 	return c
 }
@@ -840,6 +931,7 @@ func (stop *ChatCompletionStop) UnmarshalJSON(data []byte) error {
 				return err
 			}
 			*stop = ChatCompletionStop(array)
+			return nil
 		default:
 			return errors.New("stop should be a string, an array or null")
 		}
