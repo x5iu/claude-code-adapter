@@ -37,8 +37,15 @@ go build -ldflags "-X main.Version=v0.1.0" -o claude-code-adapter ./cmd/claude-c
 # Enable pass-through mode for Anthropic (bypasses conversion)
 ./claude-code-adapter serve --enable-pass-through-mode
 
+# Reasoning and behavior flags
+./claude-code-adapter serve --strict
+./claude-code-adapter serve --format anthropic-claude-v1
+./claude-code-adapter serve --context-window-resize-factor 0.6
+./claude-code-adapter serve --disable-interleaved-thinking
+./claude-code-adapter serve --force-thinking
+
 # Use custom config file
-./claude-code-adapter serve
+./claude-code-adapter serve -c ./config.yaml
 # Config searched in: $HOME/.claude-code-adapter/config.yaml, ./config.yaml
 ```
 
@@ -53,20 +60,35 @@ The server can be configured via:
 Example config.yaml (see config.template.yaml):
 ```yaml
 provider: "openrouter"  # Default provider: openrouter or anthropic
-strict: false           # Strict validation mode
+
 http:
-  port: 2194           # Server port
-mapping:
-  models:              # Model name mappings for OpenRouter
+  port: 2194            # Server port
+
+options:
+  strict: false
+  reasoning:
+    format: "anthropic-claude-v1"   # or "openai-responses-v1"
+    effort: "medium"                # minimal|low|medium|high
+    delimiter: "/"                  # signature delimiter used in stream conversion
+  models:                           # Model name mappings for OpenRouter
     claude-sonnet-4-20250514: "anthropic/claude-sonnet-4"
     claude-opus-4-1-20250805: "anthropic/claude-opus-4.1"
+  context_window_resize_factor: 0.6
+  disable_count_tokens_request: false
+
 anthropic:
-  enable_pass_through_mode: false  # Pass requests directly without conversion
+  enable_pass_through_mode: false
+  disable_interleaved_thinking: false
+  force_thinking: false
   base_url: "https://api.anthropic.com"
   version: "2023-06-01"
+
 openrouter:
   base_url: "https://openrouter.ai/api"
-  allowed_providers:   # Provider preference for OpenRouter
+  model_reasoning_format:
+    anthropic/claude-sonnet-4: "anthropic-claude-v1"
+    openai/gpt-5: "openai-responses-v1"
+  allowed_providers:
     - "anthropic"
     - "google-vertex"
     - "amazon-bedrock"
@@ -163,9 +185,9 @@ Key features:
 ### Core Components
 
 - **Provider Interface** (`pkg/provider/provider.go`): Defines the main API interface using defc annotations for code generation
-- **Generated Client** (`pkg/provider/provider.gen.go`): Auto-generated HTTP client implementation with retry logic and error handling
+- **Generated Client** (`pkg/provider/provider_impl.go`): Auto-generated HTTP client implementation with retry logic and error handling
 - **Response Handler** (`pkg/provider/response_handler.go`): Handles streaming responses and error parsing from both OpenRouter and Anthropic APIs
-- **Format Adapter** (`pkg/adapter/convert.go`): Converts Anthropic API requests to OpenRouter format, handling message structure, tool calls, thinking mode, and content types
+- **Format Adapter** (`pkg/adapter/convert_request.go`): Converts Anthropic API requests to OpenRouter format, handling message structure, tool calls, thinking mode, and content types
 - **Stream Adapter** (`pkg/adapter/convert_stream.go`): Converts OpenRouter streaming responses to Anthropic streaming format, handling event sequence, content transitions, and usage tracking
 - **OpenRouter Types** (`pkg/datatypes/openrouter/openrouter.go`): Complete type definitions for OpenRouter API including chat completions, streaming, and error types
 - **Anthropic Types** (`pkg/datatypes/anthropic/anthropic.go`): Complete type definitions for Anthropic API including messages, events, thinking, and streaming
@@ -184,7 +206,7 @@ The project uses `github.com/x5iu/defc` for HTTP client code generation. Key fea
 - Uses Viper for configuration management
 - **OpenRouter**: API key expected at `openrouter.api_key`, base URL at `openrouter.base_url` (default: `https://openrouter.ai/api`)
 - **Anthropic**: API key expected at `anthropic.api_key`, base URL at `anthropic.base_url`, version at `anthropic.version` (default: `2023-06-01`)
-- Environment variables automatically bound via `option.go`:
+- Environment variables automatically bound via `options.go`:
   - `OPENROUTER_API_KEY` → `openrouter.api_key`
   - `OPENROUTER_BASE_URL` → `openrouter.base_url`
   - `ANTHROPIC_API_KEY` → `anthropic.api_key` 

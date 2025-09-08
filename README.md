@@ -37,6 +37,9 @@ go build -o claude-code-adapter ./cmd/claude-code-adapter-cli
 # Start the proxy server (default port 2194)
 ./claude-code-adapter serve
 
+# Start with custom port
+./claude-code-adapter serve -p 8080
+
 # Start with OpenRouter provider
 ./claude-code-adapter serve --provider openrouter
 
@@ -45,6 +48,19 @@ go build -o claude-code-adapter ./cmd/claude-code-adapter-cli
 
 # Enable debug logging
 ./claude-code-adapter serve --debug
+
+# Enable pass-through mode for Anthropic (bypasses conversion)
+./claude-code-adapter serve --enable-pass-through-mode
+
+# Reasoning and behavior flags
+./claude-code-adapter serve --strict
+./claude-code-adapter serve --format anthropic-claude-v1
+./claude-code-adapter serve --context-window-resize-factor 0.6
+./claude-code-adapter serve --disable-interleaved-thinking
+./claude-code-adapter serve --force-thinking
+
+# Use custom config file
+./claude-code-adapter serve -c ./config.yaml
 ```
 
 The server will listen on `127.0.0.1:2194` and accept Anthropic Messages API requests at `/v1/messages`.
@@ -63,23 +79,35 @@ Create a `config.yaml` file (see `config.template.yaml`):
 
 ```yaml
 provider: "openrouter"  # Default provider: openrouter or anthropic
-strict: false           # Strict validation mode
-http:
-  port: 2194           # Server port
 
-mapping:
-  models:              # Model name mappings for OpenRouter
+http:
+  port: 2194            # Server port
+
+options:
+  strict: false
+  reasoning:
+    format: "anthropic-claude-v1"   # or "openai-responses-v1"
+    effort: "medium"                # minimal|low|medium|high
+    delimiter: "/"                  # signature delimiter used in stream conversion
+  models:                           # Model name mappings for OpenRouter
     claude-sonnet-4-20250514: "anthropic/claude-sonnet-4"
     claude-opus-4-1-20250805: "anthropic/claude-opus-4.1"
+  context_window_resize_factor: 0.6
+  disable_count_tokens_request: false
 
 anthropic:
-  enable_pass_through_mode: false  # Pass requests directly without conversion
+  enable_pass_through_mode: false
+  disable_interleaved_thinking: false
+  force_thinking: false
   base_url: "https://api.anthropic.com"
   version: "2023-06-01"
 
 openrouter:
   base_url: "https://openrouter.ai/api"
-  allowed_providers:   # Provider preference for OpenRouter
+  model_reasoning_format:
+    anthropic/claude-sonnet-4: "anthropic-claude-v1"
+    openai/gpt-5: "openai-responses-v1"
+  allowed_providers:
     - "anthropic"
     - "google-vertex"
     - "amazon-bedrock"
@@ -92,6 +120,7 @@ export OPENROUTER_API_KEY="your_openrouter_api_key"
 export ANTHROPIC_API_KEY="your_anthropic_api_key"
 export OPENROUTER_BASE_URL="https://openrouter.ai/api"
 export ANTHROPIC_BASE_URL="https://api.anthropic.com"
+export ANTHROPIC_VERSION="2023-06-01"
 ```
 
 ## Architecture
