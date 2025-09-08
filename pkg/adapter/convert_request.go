@@ -120,8 +120,8 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 		}
 		dst.Reasoning = reasoning
 	}
-	switch format := viper.GetString("options.reasoning.format"); format {
-	case string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1):
+	switch format := getOpenRouterModelReasoningFormat(dst.Model); format {
+	case openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1:
 		if dst.Reasoning == nil {
 			if viper.GetBool("anthropic.force_thinking") {
 				if dst.MaxTokens == nil || *dst.MaxTokens <= 1024 {
@@ -133,7 +133,7 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 				}
 			}
 		}
-	case string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1):
+	case openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1:
 		var effort openrouter.ChatCompletionReasoningEffort
 		if model, suffix, ok := strings.Cut(dst.Model, ":"); ok {
 			dst.Model = model
@@ -318,7 +318,7 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 			}
 		}
 	}
-	dst.Messages = canonicalOpenRouterMessages(dstMessages)
+	dst.Messages = canonicalOpenRouterMessages(dst.Model, dstMessages)
 	return dst
 }
 
@@ -328,6 +328,7 @@ type openrouterChatCompletionMessageWrapper struct {
 }
 
 func canonicalOpenRouterMessages(
+	model string,
 	messageWrappers []*openrouterChatCompletionMessageWrapper,
 ) (messages []*openrouter.ChatCompletionMessage) {
 	messages = make([]*openrouter.ChatCompletionMessage, 0, len(messageWrappers))
@@ -405,8 +406,8 @@ func canonicalOpenRouterMessages(
 				for index, reasoningDetail := range message.ReasoningDetails {
 					reasoningDetail.Index = index
 				}
-				switch format := viper.GetString("options.reasoning.format"); format {
-				case string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1):
+				switch format := getOpenRouterModelReasoningFormat(model); format {
+				case openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1:
 					refinedReasoningDetails := make([]*openrouter.ChatCompletionMessageReasoningDetail, 0, len(message.ReasoningDetails))
 					for _, reasoningDetail := range message.ReasoningDetails {
 						reasoningDetail.Format = openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1
@@ -504,4 +505,15 @@ func convertAnthropicToolResultMessageContentsToOpenRouterChatCompletionMessageC
 		}
 	}
 	return dst
+}
+
+func getOpenRouterModelReasoningFormat(
+	model string,
+) (format openrouter.ChatCompletionMessageReasoningDetailFormat) {
+	if modelReasoningFormat := viper.GetStringMapString("openrouter.model_reasoning_format"); modelReasoningFormat != nil {
+		if format, ok := modelReasoningFormat[model]; ok {
+			return openrouter.ChatCompletionMessageReasoningDetailFormat(format)
+		}
+	}
+	return openrouter.ChatCompletionMessageReasoningDetailFormat(viper.GetString("options.reasoning.format"))
 }

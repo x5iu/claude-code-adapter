@@ -883,7 +883,7 @@ func TestCanonicalOpenRouterMessages(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := canonicalOpenRouterMessages(tt.src)
+			got := canonicalOpenRouterMessages("claude-3-5-sonnet-20241022", tt.src)
 			if !tt.want(got) {
 				t.Errorf("canonicalOpenRouterMessages() validation failed")
 			}
