@@ -18,8 +18,9 @@ func init() {
 }
 
 type ConvertStreamOptions struct {
-	InputTokens        int64
-	OpenRouterProvider *string
+	InputTokens                     int64
+	OpenRouterProvider              *string
+	OpenRouterChatCompletionBuilder *openrouter.ChatCompletionBuilder
 }
 
 type ConvertStreamOption func(*ConvertStreamOptions)
@@ -33,6 +34,12 @@ func WithInputTokens(inputTokens int64) ConvertStreamOption {
 func ExtractOpenRouterProvider(provider *string) ConvertStreamOption {
 	return func(o *ConvertStreamOptions) {
 		o.OpenRouterProvider = provider
+	}
+}
+
+func ExtractOpenRouterChatCompletionBuilder(builder *openrouter.ChatCompletionBuilder) ConvertStreamOption {
+	return func(o *ConvertStreamOptions) {
+		o.OpenRouterChatCompletionBuilder = builder
 	}
 }
 
@@ -76,6 +83,9 @@ func ConvertOpenRouterStreamToAnthropicStream(
 					},
 				}, nil)
 			})
+			if convertOptions.OpenRouterChatCompletionBuilder != nil {
+				convertOptions.OpenRouterChatCompletionBuilder.Add(chunk)
+			}
 			if chunk.Usage != nil {
 				usage = &anthropic.Usage{
 					InputTokens:  int64(float64(chunk.Usage.PromptTokens) * contextWindowResizeFactor),

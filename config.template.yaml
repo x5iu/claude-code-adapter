@@ -1,4 +1,5 @@
 provider: "openrouter"
+snapshot: "jsonl:snapshot.jsonl"
 
 http:
   port: 2194
@@ -18,6 +19,7 @@ options:
 anthropic:
   enable_pass_through_mode: false
   disable_interleaved_thinking: false
+  force_thinking: false
   base_url: "https://api.anthropic.com"
   version: "2023-06-01"
 

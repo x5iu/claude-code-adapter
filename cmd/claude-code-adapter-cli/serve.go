@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -25,6 +27,8 @@ import (
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
 	"github.com/x5iu/claude-code-adapter/pkg/provider"
+	"github.com/x5iu/claude-code-adapter/pkg/snapshot"
+	"github.com/x5iu/claude-code-adapter/pkg/snapshot/jsonl"
 	"github.com/x5iu/claude-code-adapter/pkg/utils"
 )
 
@@ -75,6 +79,7 @@ func newServeCommand() *cobra.Command {
 	flags.Float64("context-window-resize-factor", 1.0, "context window resize factor")
 	flags.Bool("disable-interleaved-thinking", false, "disable interleaved thinking")
 	flags.Bool("force-thinking", false, "force thinking")
+	flags.String("snapshot", "", "snapshot recorder config")
 	cobra.CheckErr(viper.BindPFlag("debug", flags.Lookup("debug")))
 	cobra.CheckErr(viper.BindPFlag("http.port", flags.Lookup("port")))
 	cobra.CheckErr(viper.BindPFlag("provider", flags.Lookup("provider")))
@@ -84,6 +89,7 @@ func newServeCommand() *cobra.Command {
 	cobra.CheckErr(viper.BindPFlag("anthropic.enable_pass_through_mode", flags.Lookup("enable-pass-through-mode")))
 	cobra.CheckErr(viper.BindPFlag("anthropic.disable_interleaved_thinking", flags.Lookup("disable-interleaved-thinking")))
 	cobra.CheckErr(viper.BindPFlag("anthropic.force_thinking", flags.Lookup("force-thinking")))
+	cobra.CheckErr(viper.BindPFlag("snapshot", flags.Lookup("snapshot")))
 	viper.SetOptions(viper.WithLogger(slog.Default()))
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
@@ -95,9 +101,14 @@ func newServeCommand() *cobra.Command {
 func serve(cmd *cobra.Command, _ []string) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	recorder, err := makeSnapshotRecorder(ctx, viper.GetString("snapshot"))
+	if err != nil {
+		slog.Warn(fmt.Sprintf("error making snapshot recorder: %s", err.Error()))
+	}
+	defer recorder.Close()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	mux.HandleFunc("/v1/messages", onMessages(cmd, provider.NewProvider()))
+	mux.HandleFunc("/v1/messages", onMessages(cmd, provider.NewProvider(), recorder))
 	server := &http.Server{
 		Addr:     fmt.Sprintf("127.0.0.1:%d", viper.GetUint16("http.port")),
 		Handler:  mux,
@@ -117,12 +128,32 @@ func serve(cmd *cobra.Command, _ []string) {
 	}
 }
 
-func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWriter, r *http.Request) {
-	var requestCounter atomic.Int64
+func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorder) func(w http.ResponseWriter, r *http.Request) {
+	var (
+		requestCounter atomic.Int64
+		version        = cmd.Parent().Version
+	)
 	return func(w http.ResponseWriter, r *http.Request) {
+		sn := &snapshot.Snapshot{
+			RequestTime: time.Now(),
+			Version:     version,
+		}
 		requestID := requestCounter.Add(1)
+		sn.RequestID = strconv.FormatInt(requestID, 10)
+		defer func() {
+			go func() {
+				sn.FinishTime = time.Now()
+				sn.RequestHeader = snapshot.Header(r.Header)
+				if err := viper.Unmarshal(&sn.Config); err != nil {
+					slog.Warn(fmt.Sprintf("[%d] error unmarshalling config: %s", requestID, err.Error()))
+				}
+				if err := rec.Record(sn); err != nil {
+					slog.Warn(fmt.Sprintf("[%d] error recording snapshot: %s", requestID, err.Error()))
+				}
+			}()
+		}()
 		r.Header.Del(anthropic.HeaderAPIKey)
-		r.Header.Set("User-Agent", fmt.Sprintf("claude-code-adapter-cli/%s", cmd.Parent().Version[1:]))
+		r.Header.Set("User-Agent", fmt.Sprintf("claude-code-adapter-cli/%s", version[1:]))
 		w.Header().Set("X-Cc-Request-Id", strconv.FormatInt(requestID, 10))
 		defer func() {
 			if err := recover(); err != nil {
@@ -133,6 +164,7 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 					http.StatusInternalServerError,
 					fmt.Sprintf("An error occured while processing your request: %v", err),
 				)
+				sn.StatusCode = http.StatusInternalServerError
 			}
 		}()
 		if !utils.IsContentType(r.Header, "application/json") {
@@ -140,6 +172,7 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 				http.StatusBadRequest,
 				fmt.Sprintf("Invalid Content-Type %q", r.Header.Get("Content-Type")),
 			)
+			sn.StatusCode = http.StatusBadRequest
 			return
 		}
 		rawBody, err := io.ReadAll(r.Body)
@@ -148,6 +181,8 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 				http.StatusInternalServerError,
 				fmt.Sprintf("Failed to read request body: %s", err.Error()),
 			)
+			sn.Error = &snapshot.Error{Message: err.Error()}
+			sn.StatusCode = http.StatusInternalServerError
 			return
 		}
 		rawBody, _ = json.MarshalIndent(json.RawMessage(rawBody), "", "    ")
@@ -159,8 +194,11 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 				http.StatusBadRequest,
 				fmt.Sprintf("The request body is not valid JSON: %s", err.Error()),
 			)
+			sn.Error = &snapshot.Error{Message: err.Error()}
+			sn.StatusCode = http.StatusBadRequest
 			return
 		}
+		sn.AnthropicRequest = req
 		r.Header.Del("Content-Type")
 		r.Header.Del("Content-Length")
 		r.Header.Del("Transfer-Encoding")
@@ -181,7 +219,7 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 			}
 		}
 		if !viper.GetBool("options.disable_count_tokens_request") {
-			usage, err := p.CountAnthropicTokens(countTokensCtx, &anthropic.CountTokensRequest{
+			usage, err := prov.CountAnthropicTokens(countTokensCtx, &anthropic.CountTokensRequest{
 				System:     req.System,
 				Model:      req.Model,
 				Messages:   req.Messages,
@@ -195,6 +233,7 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 				} else {
 					slog.Error(fmt.Sprintf("[%d] error making CountAnthropicTokens request: %s", requestID, err.Error()))
 				}
+				sn.Error = &snapshot.Error{Message: err.Error()}
 			} else {
 				inputTokens = usage.InputTokens
 				slog.Info(fmt.Sprintf("[%d] request input tokens (estimated): %d", requestID, inputTokens))
@@ -245,6 +284,7 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 			}
 		}()
 		if useAnthropicProvider(ccProvider) {
+			sn.Provider = ProviderAnthropic
 			slog.Info(fmt.Sprintf("[%d] using provider %q", requestID, ProviderAnthropic))
 			w.Header().Set("X-Provider", ProviderAnthropic)
 			var (
@@ -252,14 +292,17 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 				reader                io.ReadCloser
 				enablePassThroughMode = viper.GetBool("anthropic.enable_pass_through_mode")
 			)
+			defer func() {
+				sn.ResponseHeader = snapshot.Header(header)
+			}()
 			if enablePassThroughMode {
-				reader, header, err = p.MakeAnthropicMessagesRequest(r.Context(),
+				reader, header, err = prov.MakeAnthropicMessagesRequest(r.Context(),
 					utils.NewResettableReader(rawBody),
 					provider.WithQuery("beta", "true"),
 					provider.WithHeaders(r.Header),
 				)
 			} else {
-				stream, header, err = p.GenerateAnthropicMessage(r.Context(), req,
+				stream, header, err = prov.GenerateAnthropicMessage(r.Context(), req,
 					provider.WithQuery("beta", "true"),
 					provider.WithHeaders(r.Header),
 					provider.ReplaceBody(rawBody),
@@ -274,23 +317,33 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 				slog.Error(fmt.Sprintf("[%d] error making anthropic /v1/messages request: %s", requestID, err.Error()))
 				if providerError, isProviderError := provider.ParseError(err); isProviderError {
 					respondError(w, providerError.StatusCode(), providerError.Message())
+					sn.Error = &snapshot.Error{
+						Message: providerError.Message(),
+						Type:    providerError.Type(),
+						Source:  providerError.Source(),
+					}
+					sn.StatusCode = providerError.StatusCode()
 				} else {
 					respondError(w, http.StatusInternalServerError, err.Error())
+					sn.Error = &snapshot.Error{Message: err.Error()}
+					sn.StatusCode = http.StatusInternalServerError
 				}
 				return
 			}
 			if enablePassThroughMode {
 				defer reader.Close()
-				recvBytes, err := io.ReadAll(reader)
-				if err != nil {
-					slog.Error(fmt.Sprintf("[%d] error reading anthropic /v1/messages response: %s", requestID, err))
-					respondError(w, http.StatusInternalServerError, err.Error())
-				} else {
-					slog.Debug(fmt.Sprintf(">>>>>>>>>>>>>>>>> [%d] anthropic response >>>>>>>>>>>>>>>>>", requestID) + "\n" + string(recvBytes))
-					slog.Debug(fmt.Sprintf("<<<<<<<<<<<<<<<<< [%d] anthropic response <<<<<<<<<<<<<<<<<", requestID))
-					if _, err = w.Write(recvBytes); err != nil {
-						slog.Warn(fmt.Sprintf("[%d] error sending Anthropic response: %s", requestID, err))
-					}
+				w.WriteHeader(http.StatusOK)
+				sn.StatusCode = http.StatusOK
+				var recvBuf bytes.Buffer
+				tee := io.TeeReader(reader, &recvBuf)
+				if _, err := io.Copy(w, tee); err != nil {
+					slog.Warn(fmt.Sprintf("[%d] error sending Anthropic response: %s", requestID, err))
+					sn.Error = &snapshot.Error{Message: err.Error()}
+				}
+				slog.Debug(fmt.Sprintf(">>>>>>>>>>>>>>>>> [%d] anthropic response >>>>>>>>>>>>>>>>>", requestID) + "\n" + recvBuf.String())
+				slog.Debug(fmt.Sprintf("<<<<<<<<<<<<<<<<< [%d] anthropic response <<<<<<<<<<<<<<<<<", requestID))
+				if err := json.Unmarshal(recvBuf.Bytes(), &sn.AnthropicResponse); err != nil {
+					slog.Warn(fmt.Sprintf("[%d] error unmarshalling Anthropic response: %s", requestID, err))
 				}
 				return
 			}
@@ -299,13 +352,16 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 			case ProviderOpenRouter:
 				fallthrough
 			default:
+				sn.Provider = ProviderOpenRouter
 				ccProvider = ProviderOpenRouter
 				slog.Info(fmt.Sprintf("[%d] using provider %q", requestID, ProviderOpenRouter))
 				w.Header().Set("X-Provider", ProviderOpenRouter)
 				allowedProviders := viper.GetStringSlice("openrouter.allowed_providers")
-				orStream, _, err := p.CreateOpenRouterChatCompletion(
+				openrouterRequest := adapter.ConvertAnthropicRequestToOpenRouterRequest(req)
+				sn.OpenRouterRequest = openrouterRequest
+				orStream, header, err := prov.CreateOpenRouterChatCompletion(
 					r.Context(),
-					adapter.ConvertAnthropicRequestToOpenRouterRequest(req),
+					openrouterRequest,
 					openrouter.WithIdentity("https://github.com/x5iu/claude-code-adapter", "claude-code-adapter"),
 					openrouter.WithProviderPreference(&openrouter.ProviderPreference{
 						Order:             allowedProviders,
@@ -315,12 +371,25 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 						Sort:              lo.ToPtr(openrouter.ProviderSortMethodThroughput),
 					}),
 				)
+				chatCompletionBuilder := openrouter.NewChatCompletionBuilder()
+				defer func() {
+					sn.ResponseHeader = snapshot.Header(header)
+					sn.OpenRouterResponse = chatCompletionBuilder.Build()
+				}()
 				if err != nil {
 					slog.Error(fmt.Sprintf("[%d] error making OpenRouter ChatCompletions request: %s", requestID, err.Error()))
 					if providerError, isProviderError := provider.ParseError(err); isProviderError {
 						respondError(w, providerError.StatusCode(), providerError.Message())
+						sn.Error = &snapshot.Error{
+							Message: providerError.Message(),
+							Type:    providerError.Type(),
+							Source:  providerError.Source(),
+						}
+						sn.StatusCode = providerError.StatusCode()
 					} else {
 						respondError(w, http.StatusInternalServerError, err.Error())
+						sn.Error = &snapshot.Error{Message: err.Error()}
+						sn.StatusCode = http.StatusInternalServerError
 					}
 					return
 				}
@@ -328,6 +397,7 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 					orStream,
 					adapter.WithInputTokens(inputTokens),
 					adapter.ExtractOpenRouterProvider(&orProvider),
+					adapter.ExtractOpenRouterChatCompletionBuilder(chatCompletionBuilder),
 				)
 			}
 		}
@@ -335,6 +405,7 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 		if req.Stream {
 			w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 			w.WriteHeader(http.StatusOK)
+			sn.StatusCode = http.StatusOK
 		} else {
 			w.Header().Set("Content-Type", "application/json")
 		}
@@ -349,6 +420,8 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 					}))
 				} else {
 					respondError(w, http.StatusInternalServerError, err.Error())
+					sn.Error = &snapshot.Error{Message: err.Error()}
+					sn.StatusCode = http.StatusInternalServerError
 				}
 				return
 			}
@@ -361,17 +434,31 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 							ErrType:    providerError.Type(),
 							ErrMessage: providerError.Message(),
 						}))
+						sn.Error = &snapshot.Error{
+							Message: providerError.Message(),
+							Type:    providerError.Type(),
+							Source:  providerError.Source(),
+						}
 					} else {
 						fmt.Fprintf(w, "data: %s\n\n", utils.JSONEncodeString(&anthropic.StreamError{
 							ErrType:    anthropic.ErrorContentType,
 							ErrMessage: err.Error(),
 						}))
+						sn.Error = &snapshot.Error{Message: err.Error()}
 					}
 				} else {
 					if providerError, isProviderError := provider.ParseError(err); isProviderError {
 						respondError(w, providerError.StatusCode(), providerError.Message())
+						sn.Error = &snapshot.Error{
+							Message: providerError.Message(),
+							Type:    providerError.Type(),
+							Source:  providerError.Source(),
+						}
+						sn.StatusCode = providerError.StatusCode()
 					} else {
 						respondError(w, http.StatusInternalServerError, err.Error())
+						sn.Error = &snapshot.Error{Message: err.Error()}
+						sn.StatusCode = http.StatusInternalServerError
 					}
 				}
 				return
@@ -393,16 +480,22 @@ func onMessages(cmd *cobra.Command, p provider.Provider) func(w http.ResponseWri
 				}
 			}
 		}
-		rawBytes, err := json.MarshalIndent(dstMessageBuilder.Message(), "", "    ")
+		dstMessage := dstMessageBuilder.Message()
+		sn.AnthropicResponse = dstMessage
+		rawBytes, err := json.MarshalIndent(dstMessage, "", "    ")
 		if err != nil {
 			slog.Error(fmt.Sprintf("[%d] error marshaling non-stream response: %s", requestID, err.Error()))
 			respondError(w, http.StatusInternalServerError, err.Error())
+			sn.Error = &snapshot.Error{Message: err.Error()}
+			sn.StatusCode = http.StatusInternalServerError
 			return
 		}
 		if !req.Stream {
 			w.WriteHeader(http.StatusOK)
+			sn.StatusCode = http.StatusOK
 			if _, err = w.Write(rawBytes); err != nil {
 				slog.Warn(fmt.Sprintf("[%d] errror sending non-stream response: %s", requestID, err.Error()))
+				sn.Error = &snapshot.Error{Message: err.Error()}
 			}
 		}
 		switch ccProvider {
@@ -461,5 +554,28 @@ func respondError(w http.ResponseWriter, status int, message string) {
 		},
 	}); err != nil {
 		slog.Warn(fmt.Sprintf("[%s] error sending error response: %s", w.Header().Get("X-Cc-Request-Id"), err.Error()))
+	}
+}
+
+func makeSnapshotRecorder(ctx context.Context, cfg string) (snapshot.Recorder, error) {
+	u, err := url.Parse(cfg)
+	if err != nil {
+		return nil, err
+	}
+	switch u.Scheme {
+	case "jsonl":
+		var path string
+		if u.Opaque != "" {
+			path = u.Opaque
+		} else {
+			path = u.Path
+		}
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			return nil, err
+		}
+		return jsonl.NewRecorder(ctx, file), nil
+	default:
+		return nil, fmt.Errorf("unsupported snapshot recorder type %q", u.Scheme)
 	}
 }

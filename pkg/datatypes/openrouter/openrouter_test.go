@@ -13,11 +13,11 @@ func TestChatCompletionBuilder_AggregatesMetadataAndUsage(t *testing.T) {
 	b := NewChatCompletionBuilder()
 
 	chunk1 := &ChatCompletionChunk{
-		ID:          "test-id",
-		Provider:    "anthropic",
-		Model:       "anthropic/claude-opus-4.1",
-		Created:     1234567890,
-		Object:      "chat.completion.chunk",
+		ID:       "test-id",
+		Provider: "anthropic",
+		Model:    "anthropic/claude-opus-4.1",
+		Created:  1234567890,
+		Object:   "chat.completion.chunk",
 		Choices: []*ChatCompletionChunkChoice{{
 			Index: 0,
 			Delta: &ChatCompletionChunkChoiceDelta{
@@ -258,7 +258,7 @@ func TestWithProviderPreferenceAndIdentity(t *testing.T) {
 	if string(b1) != string(b2) {
 		t.Fatalf("getbody mismatch")
 	}
-	WithIdentity("r","t")(req)
+	WithIdentity("r", "t")(req)
 	if req.Header.Get("HTTP-Referer") != "r" || req.Header.Get("X-Title") != "t" {
 		t.Fatalf("identity headers not set")
 	}
@@ -270,13 +270,13 @@ func TestUsageMergeRules(t *testing.T) {
 	chunk1 := &ChatCompletionChunk{
 		Choices: []*ChatCompletionChunkChoice{{Index: 0, Delta: &ChatCompletionChunkChoiceDelta{Content: "x"}}},
 		Usage: &ChatCompletionUsage{
-			PromptTokens:     5,
-			CompletionTokens: 1,
-			TotalTokens:      6,
-			Cost:             json.Number("0.1"),
-			IsByok:           false,
-			PromptTokensDetails: &ChatCompletionPromptTokensDetails{CachedTokens: 1, AudioTokens: 2},
-			CostDetails: &ChatCompletionCostDetails{UpstreamInferenceCost: nil, UpstreamInferencePromptCost: json.Number("1.0"), UpstreamInferenceCompletionsCost: json.Number("2.0")},
+			PromptTokens:            5,
+			CompletionTokens:        1,
+			TotalTokens:             6,
+			Cost:                    json.Number("0.1"),
+			IsByok:                  false,
+			PromptTokensDetails:     &ChatCompletionPromptTokensDetails{CachedTokens: 1, AudioTokens: 2},
+			CostDetails:             &ChatCompletionCostDetails{UpstreamInferenceCost: nil, UpstreamInferencePromptCost: json.Number("1.0"), UpstreamInferenceCompletionsCost: json.Number("2.0")},
 			CompletionTokensDetails: &ChatCompletionCompletionTokensDetails{ReasoningTokens: 3, ImageTokens: 4},
 		},
 	}
@@ -284,34 +284,58 @@ func TestUsageMergeRules(t *testing.T) {
 	chunk2 := &ChatCompletionChunk{
 		Choices: []*ChatCompletionChunkChoice{{Index: 0, Delta: &ChatCompletionChunkChoiceDelta{}}},
 		Usage: &ChatCompletionUsage{
-			PromptTokens:     0,
-			CompletionTokens: 7,
-			TotalTokens:      0,
-			Cost:             json.Number("0"),
-			IsByok:           true,
-			PromptTokensDetails: &ChatCompletionPromptTokensDetails{CachedTokens: 3, AudioTokens: 9},
-			CostDetails: &ChatCompletionCostDetails{UpstreamInferenceCost: &f, UpstreamInferencePromptCost: json.Number("1.5"), UpstreamInferenceCompletionsCost: json.Number("2.5")},
+			PromptTokens:            0,
+			CompletionTokens:        7,
+			TotalTokens:             0,
+			Cost:                    json.Number("0"),
+			IsByok:                  true,
+			PromptTokensDetails:     &ChatCompletionPromptTokensDetails{CachedTokens: 3, AudioTokens: 9},
+			CostDetails:             &ChatCompletionCostDetails{UpstreamInferenceCost: &f, UpstreamInferencePromptCost: json.Number("1.5"), UpstreamInferenceCompletionsCost: json.Number("2.5")},
 			CompletionTokensDetails: &ChatCompletionCompletionTokensDetails{ReasoningTokens: 5, ImageTokens: 6},
 		},
 	}
 	b.Add(chunk2)
 	c := b.Build()
-	if c.Usage.PromptTokens != 5 { t.Fatalf("prompt tokens overwrite: %d", c.Usage.PromptTokens) }
-	if c.Usage.CompletionTokens != 7 { t.Fatalf("completion tokens not updated: %d", c.Usage.CompletionTokens) }
-	if c.Usage.TotalTokens != 6 { t.Fatalf("total tokens unexpected: %d", c.Usage.TotalTokens) }
-	if cf, _ := c.Usage.Cost.Float64(); math.Abs(cf-0.1) > 1e-9 { t.Fatalf("cost updated unexpectedly: %v", c.Usage.Cost) }
-	if !c.Usage.IsByok { t.Fatalf("is_byok OR failed") }
-	if c.Usage.PromptTokensDetails == nil || c.Usage.PromptTokensDetails.CachedTokens != 3 || c.Usage.PromptTokensDetails.AudioTokens != 9 { t.Fatalf("prompt tokens details merge failed: %+v", c.Usage.PromptTokensDetails) }
-	if c.Usage.CostDetails == nil || c.Usage.CostDetails.UpstreamInferenceCost == nil { t.Fatalf("cost details merge failed: %+v", c.Usage.CostDetails) }
-	if v, _ := c.Usage.CostDetails.UpstreamInferenceCost.Float64(); v != 0.0 { t.Fatalf("upstream_inference_cost mismatch: %v", v) }
-	if v1, _ := c.Usage.CostDetails.UpstreamInferencePromptCost.Float64(); math.Abs(v1-1.5) > 1e-12 { t.Fatalf("prompt_cost mismatch: %v", v1) }
-	if v2, _ := c.Usage.CostDetails.UpstreamInferenceCompletionsCost.Float64(); math.Abs(v2-2.5) > 1e-12 { t.Fatalf("completions_cost mismatch: %v", v2) }
-	if c.Usage.CompletionTokensDetails == nil || c.Usage.CompletionTokensDetails.ReasoningTokens != 5 || c.Usage.CompletionTokensDetails.ImageTokens != 6 { t.Fatalf("completion tokens details merge failed: %+v", c.Usage.CompletionTokensDetails) }
+	if c.Usage.PromptTokens != 5 {
+		t.Fatalf("prompt tokens overwrite: %d", c.Usage.PromptTokens)
+	}
+	if c.Usage.CompletionTokens != 7 {
+		t.Fatalf("completion tokens not updated: %d", c.Usage.CompletionTokens)
+	}
+	if c.Usage.TotalTokens != 6 {
+		t.Fatalf("total tokens unexpected: %d", c.Usage.TotalTokens)
+	}
+	if cf, _ := c.Usage.Cost.Float64(); math.Abs(cf-0.1) > 1e-9 {
+		t.Fatalf("cost updated unexpectedly: %v", c.Usage.Cost)
+	}
+	if !c.Usage.IsByok {
+		t.Fatalf("is_byok OR failed")
+	}
+	if c.Usage.PromptTokensDetails == nil || c.Usage.PromptTokensDetails.CachedTokens != 3 || c.Usage.PromptTokensDetails.AudioTokens != 9 {
+		t.Fatalf("prompt tokens details merge failed: %+v", c.Usage.PromptTokensDetails)
+	}
+	if c.Usage.CostDetails == nil || c.Usage.CostDetails.UpstreamInferenceCost == nil {
+		t.Fatalf("cost details merge failed: %+v", c.Usage.CostDetails)
+	}
+	if v, _ := c.Usage.CostDetails.UpstreamInferenceCost.Float64(); v != 0.0 {
+		t.Fatalf("upstream_inference_cost mismatch: %v", v)
+	}
+	if v1, _ := c.Usage.CostDetails.UpstreamInferencePromptCost.Float64(); math.Abs(v1-1.5) > 1e-12 {
+		t.Fatalf("prompt_cost mismatch: %v", v1)
+	}
+	if v2, _ := c.Usage.CostDetails.UpstreamInferenceCompletionsCost.Float64(); math.Abs(v2-2.5) > 1e-12 {
+		t.Fatalf("completions_cost mismatch: %v", v2)
+	}
+	if c.Usage.CompletionTokensDetails == nil || c.Usage.CompletionTokensDetails.ReasoningTokens != 5 || c.Usage.CompletionTokensDetails.ImageTokens != 6 {
+		t.Fatalf("completion tokens details merge failed: %+v", c.Usage.CompletionTokensDetails)
+	}
 }
 
 func TestGetTokensWhenUsageNil(t *testing.T) {
 	c := ChatCompletion{}
-	if c.GetPromptTokens() != 0 || c.GetCompletionTokens() != 0 { t.Fatalf("nil usage getters not zero: %+v", c.Usage) }
+	if c.GetPromptTokens() != 0 || c.GetCompletionTokens() != 0 {
+		t.Fatalf("nil usage getters not zero: %+v", c.Usage)
+	}
 }
 
 func TestChatCompletionBuilder_NilAndEmptyChunks(t *testing.T) {
@@ -319,7 +343,9 @@ func TestChatCompletionBuilder_NilAndEmptyChunks(t *testing.T) {
 	b.Add(nil)
 	b.Add(&ChatCompletionChunk{})
 	c := b.Build()
-	if c == nil || len(c.Choices) != 0 { t.Fatalf("unexpected build result: %#v", c) }
+	if c == nil || len(c.Choices) != 0 {
+		t.Fatalf("unexpected build result: %#v", c)
+	}
 }
 
 func TestChatCompletionBuilder_MetadataFirstWins(t *testing.T) {
@@ -327,8 +353,12 @@ func TestChatCompletionBuilder_MetadataFirstWins(t *testing.T) {
 	b.Add(&ChatCompletionChunk{ID: "a", Provider: "p1", Model: "m1", Created: 1, Object: "o", Choices: []*ChatCompletionChunkChoice{{Index: 0, Delta: &ChatCompletionChunkChoiceDelta{Content: "x"}}}})
 	b.Add(&ChatCompletionChunk{ID: "b", Provider: "p2", Model: "m2", Created: 2, Object: "o2", Choices: []*ChatCompletionChunkChoice{{Index: 0, Delta: &ChatCompletionChunkChoiceDelta{Content: "y"}}}})
 	c := b.Build()
-	if c.ID != "a" || c.Provider != "p1" || c.Model != "m1" || c.Created != 1 || c.Object != "o" { t.Fatalf("metadata not first-wins: %#v", c) }
-	if c.Choices[0].Message.Content.Text != "xy" { t.Fatalf("content not appended: %q", c.Choices[0].Message.Content.Text) }
+	if c.ID != "a" || c.Provider != "p1" || c.Model != "m1" || c.Created != 1 || c.Object != "o" {
+		t.Fatalf("metadata not first-wins: %#v", c)
+	}
+	if c.Choices[0].Message.Content.Text != "xy" {
+		t.Fatalf("content not appended: %q", c.Choices[0].Message.Content.Text)
+	}
 }
 
 func TestChatCompletionBuilder_ChoiceGapsAndNonZeroStart(t *testing.T) {
@@ -337,9 +367,15 @@ func TestChatCompletionBuilder_ChoiceGapsAndNonZeroStart(t *testing.T) {
 	b.Add(&ChatCompletionChunk{Choices: []*ChatCompletionChunkChoice{{Index: 0, Delta: &ChatCompletionChunkChoiceDelta{Content: "A"}}}})
 	b.Add(&ChatCompletionChunk{Choices: []*ChatCompletionChunkChoice{{Index: 2, Delta: &ChatCompletionChunkChoiceDelta{Content: "c"}}}})
 	c := b.Build()
-	if len(c.Choices) != 3 { t.Fatalf("choices len: %d", len(c.Choices)) }
-	if c.Choices[0].Message.Content.Text != "A" { t.Fatalf("index0 mismatch: %q", c.Choices[0].Message.Content.Text) }
-	if c.Choices[2].Message.Content.Text != "Cc" { t.Fatalf("index2 accumulation mismatch: %q", c.Choices[2].Message.Content.Text) }
+	if len(c.Choices) != 3 {
+		t.Fatalf("choices len: %d", len(c.Choices))
+	}
+	if c.Choices[0].Message.Content.Text != "A" {
+		t.Fatalf("index0 mismatch: %q", c.Choices[0].Message.Content.Text)
+	}
+	if c.Choices[2].Message.Content.Text != "Cc" {
+		t.Fatalf("index2 accumulation mismatch: %q", c.Choices[2].Message.Content.Text)
+	}
 }
 
 func TestChatCompletionBuilder_BuildIdempotent(t *testing.T) {
@@ -350,7 +386,9 @@ func TestChatCompletionBuilder_BuildIdempotent(t *testing.T) {
 	b2 := NewChatCompletionBuilder()
 	b2.Add(&ChatCompletionChunk{Choices: []*ChatCompletionChunkChoice{{Index: 0, Delta: &ChatCompletionChunkChoiceDelta{Content: "x"}}}})
 	c3 := b2.Build()
-	if c1.Choices[0].Message.Content.Text != c2.Choices[0].Message.Content.Text || c1.Choices[0].Message.Content.Text != c3.Choices[0].Message.Content.Text { t.Fatalf("build not idempotent") }
+	if c1.Choices[0].Message.Content.Text != c2.Choices[0].Message.Content.Text || c1.Choices[0].Message.Content.Text != c3.Choices[0].Message.Content.Text {
+		t.Fatalf("build not idempotent")
+	}
 }
 
 func TestFinishReason_MultipleChoicesFirstNonEmptyWins(t *testing.T) {
@@ -364,8 +402,12 @@ func TestFinishReason_MultipleChoicesFirstNonEmptyWins(t *testing.T) {
 		{Index: 1, FinishReason: ChatCompletionFinishReasonLength},
 	}})
 	c := b.Build()
-	if c.Choices[0].FinishReason != ChatCompletionFinishReasonLength { t.Fatalf("choice0 finish overwrote: %v", c.Choices[0].FinishReason) }
-	if c.Choices[1].FinishReason != ChatCompletionFinishReasonStop { t.Fatalf("choice1 finish overwrote: %v", c.Choices[1].FinishReason) }
+	if c.Choices[0].FinishReason != ChatCompletionFinishReasonLength {
+		t.Fatalf("choice0 finish overwrote: %v", c.Choices[0].FinishReason)
+	}
+	if c.Choices[1].FinishReason != ChatCompletionFinishReasonStop {
+		t.Fatalf("choice1 finish overwrote: %v", c.Choices[1].FinishReason)
+	}
 }
 
 func TestUsageMerge_NextNilPreservePrevious(t *testing.T) {
@@ -373,8 +415,12 @@ func TestUsageMerge_NextNilPreservePrevious(t *testing.T) {
 	b.Add(&ChatCompletionChunk{Choices: []*ChatCompletionChunkChoice{{Index: 0, Delta: &ChatCompletionChunkChoiceDelta{}}}, Usage: &ChatCompletionUsage{PromptTokens: 3, CompletionTokens: 4, TotalTokens: 7, Cost: json.Number("1.2")}})
 	b.Add(&ChatCompletionChunk{Choices: []*ChatCompletionChunkChoice{{Index: 0, Delta: &ChatCompletionChunkChoiceDelta{}}}})
 	c := b.Build()
-	if c.Usage == nil || c.Usage.PromptTokens != 3 || c.Usage.CompletionTokens != 4 || c.Usage.TotalTokens != 7 { t.Fatalf("usage not preserved: %+v", c.Usage) }
-	if cf, _ := c.Usage.Cost.Float64(); math.Abs(cf-1.2) > 1e-12 { t.Fatalf("cost not preserved: %v", cf) }
+	if c.Usage == nil || c.Usage.PromptTokens != 3 || c.Usage.CompletionTokens != 4 || c.Usage.TotalTokens != 7 {
+		t.Fatalf("usage not preserved: %+v", c.Usage)
+	}
+	if cf, _ := c.Usage.Cost.Float64(); math.Abs(cf-1.2) > 1e-12 {
+		t.Fatalf("cost not preserved: %v", cf)
+	}
 }
 
 func TestUsageMerge_NegativeAndZeroIgnored(t *testing.T) {
@@ -382,8 +428,12 @@ func TestUsageMerge_NegativeAndZeroIgnored(t *testing.T) {
 	b.Add(&ChatCompletionChunk{Choices: []*ChatCompletionChunkChoice{{Index: 0, Delta: &ChatCompletionChunkChoiceDelta{}}}, Usage: &ChatCompletionUsage{PromptTokens: 5, CompletionTokens: 6, TotalTokens: 11, Cost: json.Number("2.0")}})
 	b.Add(&ChatCompletionChunk{Choices: []*ChatCompletionChunkChoice{{Index: 0, Delta: &ChatCompletionChunkChoiceDelta{}}}, Usage: &ChatCompletionUsage{PromptTokens: 0, CompletionTokens: -1, TotalTokens: 0, Cost: json.Number("0")}})
 	c := b.Build()
-	if c.Usage.PromptTokens != 5 || c.Usage.CompletionTokens != 6 || c.Usage.TotalTokens != 11 { t.Fatalf("zero/negative overwrite occurred: %+v", c.Usage) }
-	if cf, _ := c.Usage.Cost.Float64(); math.Abs(cf-2.0) > 1e-12 { t.Fatalf("cost overwrite occurred: %v", cf) }
+	if c.Usage.PromptTokens != 5 || c.Usage.CompletionTokens != 6 || c.Usage.TotalTokens != 11 {
+		t.Fatalf("zero/negative overwrite occurred: %+v", c.Usage)
+	}
+	if cf, _ := c.Usage.Cost.Float64(); math.Abs(cf-2.0) > 1e-12 {
+		t.Fatalf("cost overwrite occurred: %v", cf)
+	}
 }
 
 func TestCostDetails_MergeAndOverrideRules(t *testing.T) {
@@ -392,10 +442,18 @@ func TestCostDetails_MergeAndOverrideRules(t *testing.T) {
 	b.Add(&ChatCompletionChunk{Choices: []*ChatCompletionChunkChoice{{Index: 0, Delta: &ChatCompletionChunkChoiceDelta{}}}, Usage: &ChatCompletionUsage{CostDetails: &ChatCompletionCostDetails{UpstreamInferenceCost: nil, UpstreamInferencePromptCost: json.Number("1.0"), UpstreamInferenceCompletionsCost: json.Number("2.0")}}})
 	b.Add(&ChatCompletionChunk{Choices: []*ChatCompletionChunkChoice{{Index: 0, Delta: &ChatCompletionChunkChoiceDelta{}}}, Usage: &ChatCompletionUsage{CostDetails: &ChatCompletionCostDetails{UpstreamInferenceCost: &x, UpstreamInferencePromptCost: json.Number("1.5"), UpstreamInferenceCompletionsCost: json.Number("2.5")}}})
 	c := b.Build()
-	if c.Usage.CostDetails == nil || c.Usage.CostDetails.UpstreamInferenceCost == nil { t.Fatalf("upstream cost nil/zero merge failed: %+v", c.Usage.CostDetails) }
-	if v, _ := c.Usage.CostDetails.UpstreamInferenceCost.Float64(); v != 0.0 { t.Fatalf("upstream cost not zero: %v", v) }
-	if v1, _ := c.Usage.CostDetails.UpstreamInferencePromptCost.Float64(); v1 != 1.5 { t.Fatalf("prompt cost override failed: %v", v1) }
-	if v2, _ := c.Usage.CostDetails.UpstreamInferenceCompletionsCost.Float64(); v2 != 2.5 { t.Fatalf("completions cost override failed: %v", v2) }
+	if c.Usage.CostDetails == nil || c.Usage.CostDetails.UpstreamInferenceCost == nil {
+		t.Fatalf("upstream cost nil/zero merge failed: %+v", c.Usage.CostDetails)
+	}
+	if v, _ := c.Usage.CostDetails.UpstreamInferenceCost.Float64(); v != 0.0 {
+		t.Fatalf("upstream cost not zero: %v", v)
+	}
+	if v1, _ := c.Usage.CostDetails.UpstreamInferencePromptCost.Float64(); v1 != 1.5 {
+		t.Fatalf("prompt cost override failed: %v", v1)
+	}
+	if v2, _ := c.Usage.CostDetails.UpstreamInferenceCompletionsCost.Float64(); v2 != 2.5 {
+		t.Fatalf("completions cost override failed: %v", v2)
+	}
 }
 
 func TestReasoningAndText_AccumulationAndSwitch(t *testing.T) {
@@ -403,8 +461,12 @@ func TestReasoningAndText_AccumulationAndSwitch(t *testing.T) {
 	mb.Add(&ChatCompletionChunkChoiceDelta{Content: "A", Reasoning: "r1"})
 	mb.Add(&ChatCompletionChunkChoiceDelta{Content: "B", Reasoning: "r2"})
 	m := mb.Build()
-	if m.Content.Text != "AB" { t.Fatalf("text accumulation failed: %q", m.Content.Text) }
-	if m.Reasoning != "r1r2" { t.Fatalf("reasoning accumulation failed: %q", m.Reasoning) }
+	if m.Content.Text != "AB" {
+		t.Fatalf("text accumulation failed: %q", m.Content.Text)
+	}
+	if m.Reasoning != "r1r2" {
+		t.Fatalf("reasoning accumulation failed: %q", m.Reasoning)
+	}
 }
 
 func TestToolCalls_SkippedIndicesAndMultipleUpdates(t *testing.T) {
@@ -413,22 +475,34 @@ func TestToolCalls_SkippedIndicesAndMultipleUpdates(t *testing.T) {
 	mb.Add(&ChatCompletionChunkChoiceDelta{ToolCalls: []*ChatCompletionToolCall{{Index: 0, ID: "id0", Type: ChatCompletionMessageToolCallTypeFunction, Function: &ChatCompletionMessageToolCallFunction{Name: "f0", Arguments: "x"}}}})
 	mb.Add(&ChatCompletionChunkChoiceDelta{ToolCalls: []*ChatCompletionToolCall{{Index: 2, Function: &ChatCompletionMessageToolCallFunction{Arguments: "b"}}}})
 	m := mb.Build()
-	if len(m.ToolCalls) != 3 { t.Fatalf("toolcalls len: %d", len(m.ToolCalls)) }
-	if m.ToolCalls[2].Function.Name != "f2" || m.ToolCalls[2].Function.Arguments != "ab" { t.Fatalf("index2 merge failed: %+v", m.ToolCalls[2]) }
-	if m.ToolCalls[0].Function.Name != "f0" || m.ToolCalls[0].Function.Arguments != "x" { t.Fatalf("index0 not set: %+v", m.ToolCalls[0]) }
+	if len(m.ToolCalls) != 3 {
+		t.Fatalf("toolcalls len: %d", len(m.ToolCalls))
+	}
+	if m.ToolCalls[2].Function.Name != "f2" || m.ToolCalls[2].Function.Arguments != "ab" {
+		t.Fatalf("index2 merge failed: %+v", m.ToolCalls[2])
+	}
+	if m.ToolCalls[0].Function.Name != "f0" || m.ToolCalls[0].Function.Arguments != "x" {
+		t.Fatalf("index0 not set: %+v", m.ToolCalls[0])
+	}
 }
 
 func TestResponseFormat_RoundTripAndJSONSchema(t *testing.T) {
 	f := ChatCompletionResponseFormat{Type: ChatCompletionResponseFormatTypeJSONObject}
 	bts, err := json.Marshal(f)
-	if err != nil { t.Fatalf("marshal err: %v", err) }
+	if err != nil {
+		t.Fatalf("marshal err: %v", err)
+	}
 	var f2 ChatCompletionResponseFormat
-	if err := json.Unmarshal(bts, &f2); err != nil || f2.Type != ChatCompletionResponseFormatTypeJSONObject { t.Fatalf("roundtrip fail: %v %#v", err, f2) }
+	if err := json.Unmarshal(bts, &f2); err != nil || f2.Type != ChatCompletionResponseFormatTypeJSONObject {
+		t.Fatalf("roundtrip fail: %v %#v", err, f2)
+	}
 }
 
 func TestStop_Unmarshal_Array(t *testing.T) {
 	var s ChatCompletionStop
-	if err := json.Unmarshal([]byte("[\"a\",\"b\"]"), &s); err != nil || len(s) != 2 || s[0] != "a" || s[1] != "b" { t.Fatalf("array stop fail: %v %#v", err, s) }
+	if err := json.Unmarshal([]byte("[\"a\",\"b\"]"), &s); err != nil || len(s) != 2 || s[0] != "a" || s[1] != "b" {
+		t.Fatalf("array stop fail: %v %#v", err, s)
+	}
 }
 
 func TestWithProviderPreference_OverrideExisting(t *testing.T) {
@@ -443,23 +517,29 @@ func TestWithProviderPreference_OverrideExisting(t *testing.T) {
 	b1, _ := io.ReadAll(req.Body)
 	var r CreateChatCompletionRequest
 	_ = json.Unmarshal(b1, &r)
-	if r.Provider == nil || len(r.Provider.Only) != 1 || r.Provider.Only[0] != "anthropic" { t.Fatalf("provider not overridden: %#v", r.Provider) }
+	if r.Provider == nil || len(r.Provider.Only) != 1 || r.Provider.Only[0] != "anthropic" {
+		t.Fatalf("provider not overridden: %#v", r.Provider)
+	}
 }
 
 func TestWithIdentity_OverrideHeaders(t *testing.T) {
 	req := &http.Request{}
 	req.Header = http.Header{"HTTP-Referer": []string{"old"}, "X-Title": []string{"old"}}
-	WithIdentity("newr","newt")(req)
-	if req.Header.Get("HTTP-Referer") != "newr" || req.Header.Get("X-Title") != "newt" { t.Fatalf("identity headers not overridden") }
+	WithIdentity("newr", "newt")(req)
+	if req.Header.Get("HTTP-Referer") != "newr" || req.Header.Get("X-Title") != "newt" {
+		t.Fatalf("identity headers not overridden")
+	}
 }
 
 func TestErrorTypeMapping_Extended(t *testing.T) {
-	codes := []int{401,403,408,499,600,700}
-	expects := []string{"invalid_request_error","invalid_request_error","invalid_request_error","invalid_request_error","unknown_error","unknown_error"}
+	codes := []int{401, 403, 408, 499, 600, 700}
+	expects := []string{"invalid_request_error", "invalid_request_error", "invalid_request_error", "invalid_request_error", "unknown_error", "unknown_error"}
 	for i, code := range codes {
 		e := &Error{}
 		e.Inner.Code = code
-		if e.Type() != expects[i] { t.Fatalf("code %d type %s", code, e.Type()) }
+		if e.Type() != expects[i] {
+			t.Fatalf("code %d type %s", code, e.Type())
+		}
 	}
 }
 

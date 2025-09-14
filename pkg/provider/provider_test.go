@@ -560,8 +560,8 @@ func TestCreateOpenRouterChatCompletion_CachedTokensAcrossRequests(t *testing.T)
 						Type: openrouter.ChatCompletionMessageContentTypeParts,
 						Parts: []*openrouter.ChatCompletionMessageContentPart{
 							{
-								Type: openrouter.ChatCompletionMessageContentPartTypeText,
-								Text: lp,
+								Type:         openrouter.ChatCompletionMessageContentPartTypeText,
+								Text:         lp,
 								CacheControl: &openrouter.ChatCompletionMessageCacheControl{Type: "ephemeral", TTL: "5m"},
 							},
 						},

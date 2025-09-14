@@ -1924,8 +1924,8 @@ func TestForceThinking_DoesNotOverrideExistingReasoning(t *testing.T) {
 	src := &anthropic.GenerateMessageRequest{
 		Model:     "claude-3-5-sonnet-20241022",
 		MaxTokens: 1000,
-		Thinking: &anthropic.Thinking{Type: anthropic.ThinkingTypeEnabled, BudgetTokens: 1234},
-		Messages: []*anthropic.Message{},
+		Thinking:  &anthropic.Thinking{Type: anthropic.ThinkingTypeEnabled, BudgetTokens: 1234},
+		Messages:  []*anthropic.Message{},
 	}
 
 	got := ConvertAnthropicRequestToOpenRouterRequest(src)
