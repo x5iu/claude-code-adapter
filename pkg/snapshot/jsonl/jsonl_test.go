@@ -19,6 +19,7 @@ import (
 
 // io.Writer -> io.WriteCloser adapter for tests
 type nopWriteCloser struct{ io.Writer }
+
 func (nopWriteCloser) Close() error { return nil }
 
 func TestRecord_EnqueueAndCallbackSuccess(t *testing.T) {

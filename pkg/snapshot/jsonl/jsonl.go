@@ -18,7 +18,7 @@ func NewRecorder(ctx context.Context, out io.WriteCloser) snapshot.Recorder {
 		cx:         ctx,
 		ch:         make(chan *item, 64),
 		bw:         bufio.NewWriterSize(out, 64*1024),
-		out:out,
+		out:        out,
 		closed:     make(chan struct{}),
 		flushEvery: 32,
 	}
@@ -31,7 +31,7 @@ type Recorder struct {
 	wg         sync.WaitGroup
 	ch         chan *item
 	bw         *bufio.Writer
-	out io.WriteCloser
+	out        io.WriteCloser
 	closed     chan struct{}
 	once       sync.Once
 	pending    int
