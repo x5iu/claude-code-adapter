@@ -7,6 +7,8 @@ import (
 	"math"
 	"net/http"
 	"testing"
+
+	"github.com/samber/lo"
 )
 
 func TestChatCompletionBuilder_AggregatesMetadataAndUsage(t *testing.T) {
@@ -160,8 +162,8 @@ func TestChatCompletionBuilder_FinishReasonFirstWins(t *testing.T) {
 
 func TestChatCompletionMessageBuilder_RoleAndRefusalAccumulation(t *testing.T) {
 	b := &ChatCompletionMessageBuilder{}
-	b.Add(&ChatCompletionChunkChoiceDelta{Role: ChatCompletionMessageRoleAssistant, Refusal: ptr("R1")})
-	b.Add(&ChatCompletionChunkChoiceDelta{Refusal: ptr("R2")})
+	b.Add(&ChatCompletionChunkChoiceDelta{Role: ChatCompletionMessageRoleAssistant, Refusal: lo.ToPtr("R1")})
+	b.Add(&ChatCompletionChunkChoiceDelta{Refusal: lo.ToPtr("R2")})
 	m := b.Build()
 	if m.Role != ChatCompletionMessageRoleAssistant {
 		t.Fatalf("role mismatch: %v", m.Role)
@@ -542,5 +544,3 @@ func TestErrorTypeMapping_Extended(t *testing.T) {
 		}
 	}
 }
-
-func ptr[T any](v T) *T { return &v }
