@@ -2,25 +2,11 @@ package anthropic
 
 import (
 	"bytes"
+	"encoding/json"
 	"testing"
 
 	"github.com/samber/lo"
 )
-
-// createTestStream creates a test stream with the given events
-func createTestStream(events []Event, errors []error) MessageStream {
-	return func(yield func(Event, error) bool) {
-		for i, event := range events {
-			var err error
-			if i < len(errors) {
-				err = errors[i]
-			}
-			if !yield(event, err) {
-				return
-			}
-		}
-	}
-}
 
 func TestMessageBuilder_BasicTextMessage(t *testing.T) {
 	events := []Event{
@@ -589,5 +575,88 @@ func TestMessageBuilder_SignatureDelta(t *testing.T) {
 	}
 	if content.Signature != "sig123" {
 		t.Errorf("Expected signature 'sig123', got: %s", content.Signature)
+	}
+}
+
+func TestTool_OmitZero_EmptySlices(t *testing.T) {
+	tool := &Tool{
+		Type:           lo.ToPtr(ToolTypeCustom),
+		Name:           "t",
+		Description:    "d",
+		InputSchema:    json.RawMessage("null"),
+		AllowedDomains: []string{},
+		BlockedDomains: []string{},
+	}
+	b, err := json.Marshal(tool)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if _, ok := m["allowed_domains"]; ok {
+		t.Errorf("expected allowed_domains omitted, got: %s", string(b))
+	}
+	if _, ok := m["blocked_domains"]; ok {
+		t.Errorf("expected blocked_domains omitted, got: %s", string(b))
+	}
+}
+
+func TestTool_OmitZero_NonEmptySlices(t *testing.T) {
+	tool := &Tool{
+		Type:           lo.ToPtr(ToolTypeCustom),
+		Name:           "t",
+		Description:    "d",
+		InputSchema:    json.RawMessage("null"),
+		AllowedDomains: []string{"a.com"},
+		BlockedDomains: []string{"b.com"},
+	}
+	b, err := json.Marshal(tool)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if v, ok := m["allowed_domains"]; !ok {
+		t.Errorf("expected allowed_domains present")
+	} else {
+		arr, ok := v.([]any)
+		if !ok || len(arr) != 1 || arr[0] != "a.com" {
+			t.Errorf("unexpected allowed_domains: %#v", v)
+		}
+	}
+	if v, ok := m["blocked_domains"]; !ok {
+		t.Errorf("expected blocked_domains present")
+	} else {
+		arr, ok := v.([]any)
+		if !ok || len(arr) != 1 || arr[0] != "b.com" {
+			t.Errorf("unexpected blocked_domains: %#v", v)
+		}
+	}
+}
+
+func TestTool_OmitZero_NilSlices(t *testing.T) {
+	tool := &Tool{
+		Type:        lo.ToPtr(ToolTypeCustom),
+		Name:        "t",
+		Description: "d",
+		InputSchema: json.RawMessage("null"),
+	}
+	b, err := json.Marshal(tool)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if _, ok := m["allowed_domains"]; ok {
+		t.Errorf("expected allowed_domains omitted, got: %s", string(b))
+	}
+	if _, ok := m["blocked_domains"]; ok {
+		t.Errorf("expected blocked_domains omitted, got: %s", string(b))
 	}
 }

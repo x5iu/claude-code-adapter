@@ -79,6 +79,7 @@ func newServeCommand() *cobra.Command {
 	flags.Float64("context-window-resize-factor", 1.0, "context window resize factor")
 	flags.Bool("disable-interleaved-thinking", false, "disable interleaved thinking")
 	flags.Bool("force-thinking", false, "force thinking")
+	flags.Bool("use-raw-request-body", false, "use raw request body")
 	flags.String("snapshot", "", "snapshot recorder config")
 	cobra.CheckErr(viper.BindPFlag("debug", flags.Lookup("debug")))
 	cobra.CheckErr(viper.BindPFlag("http.port", flags.Lookup("port")))
@@ -89,6 +90,7 @@ func newServeCommand() *cobra.Command {
 	cobra.CheckErr(viper.BindPFlag("anthropic.enable_pass_through_mode", flags.Lookup("enable-pass-through-mode")))
 	cobra.CheckErr(viper.BindPFlag("anthropic.disable_interleaved_thinking", flags.Lookup("disable-interleaved-thinking")))
 	cobra.CheckErr(viper.BindPFlag("anthropic.force_thinking", flags.Lookup("force-thinking")))
+	cobra.CheckErr(viper.BindPFlag("anthropic.use_raw_request_body", flags.Lookup("use-raw-request-body")))
 	cobra.CheckErr(viper.BindPFlag("snapshot", flags.Lookup("snapshot")))
 	viper.SetOptions(viper.WithLogger(slog.Default()))
 	viper.SetConfigName("config")
@@ -302,11 +304,14 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 					provider.WithHeaders(r.Header),
 				)
 			} else {
-				stream, header, err = prov.GenerateAnthropicMessage(r.Context(), req,
+				options := []provider.RequestOption{
 					provider.WithQuery("beta", "true"),
 					provider.WithHeaders(r.Header),
-					provider.ReplaceBody(rawBody),
-				)
+				}
+				if viper.GetBool("anthropic.use_raw_request_body") {
+					options = append(options, provider.ReplaceBody(rawBody))
+				}
+				stream, header, err = prov.GenerateAnthropicMessage(r.Context(), req, options...)
 			}
 			for k, vv := range header {
 				for _, v := range vv {

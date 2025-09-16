@@ -306,11 +306,46 @@ type Tool struct {
 	Name           string          `json:"name"`
 	Description    string          `json:"description"`
 	InputSchema    json.RawMessage `json:"input_schema"`
-	CacheControl   *CacheControl   `json:"cache_control,omitempty"`
-	MaxUses        int             `json:"max_uses,omitempty"`
-	AllowedDomains []string        `json:"allowed_domains,omitempty"`
-	BlockedDomains []string        `json:"blocked_domains,omitempty"`
-	UserLocation   *ToolLocation   `json:"user_location,omitempty"`
+	CacheControl   *CacheControl   `json:"cache_control"`
+	MaxUses        int             `json:"max_uses"`
+	AllowedDomains []string        `json:"allowed_domains"`
+	BlockedDomains []string        `json:"blocked_domains"`
+	UserLocation   *ToolLocation   `json:"user_location"`
+}
+
+// MarshalJSON marshals the Tool to JSON, omitting zero or empty values for slices.
+// Anthropic considers the presence of a field as a valid value. When both allowed_domains and blocked_domains
+// are set to [], Anthropic still regards this as an error, so we need to handle these fields separately.
+//
+// reference: https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/web-search-tool#domain-filtering
+func (t *Tool) MarshalJSON() ([]byte, error) {
+	type toolMarshaler struct {
+		Type           *ToolType       `json:"type"`
+		Name           string          `json:"name"`
+		Description    string          `json:"description"`
+		InputSchema    json.RawMessage `json:"input_schema"`
+		CacheControl   *CacheControl   `json:"cache_control,omitempty"`
+		MaxUses        int             `json:"max_uses,omitempty"`
+		AllowedDomains []string        `json:"allowed_domains,omitzero"`
+		BlockedDomains []string        `json:"blocked_domains,omitzero"`
+		UserLocation   *ToolLocation   `json:"user_location,omitempty"`
+	}
+	aux := toolMarshaler{
+		Type:         t.Type,
+		Name:         t.Name,
+		Description:  t.Description,
+		InputSchema:  t.InputSchema,
+		CacheControl: t.CacheControl,
+		MaxUses:      t.MaxUses,
+		UserLocation: t.UserLocation,
+	}
+	if len(t.AllowedDomains) > 0 {
+		aux.AllowedDomains = t.AllowedDomains
+	}
+	if len(t.BlockedDomains) > 0 {
+		aux.BlockedDomains = t.BlockedDomains
+	}
+	return json.Marshal(&aux)
 }
 
 type ToolType string
