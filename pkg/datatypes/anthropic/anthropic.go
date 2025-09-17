@@ -204,6 +204,11 @@ type MessageContent struct {
 	ToolUseID string                `json:"tool_use_id,omitempty"`
 	Content   MessageContents       `json:"content,omitempty"`
 
+	Title            string  `json:"title,omitempty"`
+	Url              string  `json:"url,omitempty"`
+	EncryptedContent string  `json:"encrypted_content,omitempty"`
+	PageAge          *string `json:"page_age,omitempty"`
+
 	// Citation are always enabled for web search
 	// reference: https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/web-search-tool#citations
 	Citations []*Citation `json:"citation,omitempty"`
@@ -322,8 +327,8 @@ func (t *Tool) MarshalJSON() ([]byte, error) {
 	type toolMarshaler struct {
 		Type           *ToolType       `json:"type"`
 		Name           string          `json:"name"`
-		Description    string          `json:"description"`
-		InputSchema    json.RawMessage `json:"input_schema"`
+		Description    string          `json:"description,omitzero"`   // the description is empty while calling web_search_20250305 tool
+		InputSchema    json.RawMessage `json:"input_schema,omitempty"` // the input_schema is null while calling web_search_20250305 tool
 		CacheControl   *CacheControl   `json:"cache_control,omitempty"`
 		MaxUses        int             `json:"max_uses,omitempty"`
 		AllowedDomains []string        `json:"allowed_domains,omitzero"`
@@ -353,6 +358,10 @@ type ToolType string
 const (
 	ToolTypeCustom        ToolType = "custom"
 	ToolTypeWebSearch2025 ToolType = "web_search_20250305"
+)
+
+const (
+	ToolNameWebSearch = "WebSearch"
 )
 
 type ToolLocation struct {
@@ -485,7 +494,7 @@ func (builder *MessageBuilder) Add(event Event) error {
 		case MessageContentTypeText:
 			content.Text = builder.textBuilder.String()
 			builder.textBuilder.Reset()
-		case MessageContentTypeToolUse:
+		case MessageContentTypeToolUse, MessageContentTypeServerToolUse:
 			var inputObject map[string]any
 			decoder := json.NewDecoder(&builder.jsonBuilder)
 			decoder.UseNumber()

@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -22,6 +23,8 @@ import (
 	"github.com/samber/lo"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 
 	"github.com/x5iu/claude-code-adapter/pkg/adapter"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
@@ -80,6 +83,7 @@ func newServeCommand() *cobra.Command {
 	flags.Bool("disable-interleaved-thinking", false, "disable interleaved thinking")
 	flags.Bool("force-thinking", false, "force thinking")
 	flags.Bool("use-raw-request-body", false, "use raw request body")
+	flags.Bool("disable-web-search-blocked-domains", false, "disable web search blocked domains")
 	flags.String("snapshot", "", "snapshot recorder config")
 	cobra.CheckErr(viper.BindPFlag("debug", flags.Lookup("debug")))
 	cobra.CheckErr(viper.BindPFlag("http.port", flags.Lookup("port")))
@@ -91,6 +95,7 @@ func newServeCommand() *cobra.Command {
 	cobra.CheckErr(viper.BindPFlag("anthropic.disable_interleaved_thinking", flags.Lookup("disable-interleaved-thinking")))
 	cobra.CheckErr(viper.BindPFlag("anthropic.force_thinking", flags.Lookup("force-thinking")))
 	cobra.CheckErr(viper.BindPFlag("anthropic.use_raw_request_body", flags.Lookup("use-raw-request-body")))
+	cobra.CheckErr(viper.BindPFlag("anthropic.disable_web_search_blocked_domains", flags.Lookup("disable-web-search-blocked-domains")))
 	cobra.CheckErr(viper.BindPFlag("snapshot", flags.Lookup("snapshot")))
 	viper.SetOptions(viper.WithLogger(slog.Default()))
 	viper.SetConfigName("config")
@@ -105,7 +110,7 @@ func serve(cmd *cobra.Command, _ []string) {
 	defer stop()
 	recorder, err := makeSnapshotRecorder(ctx, viper.GetString("snapshot"))
 	if err != nil {
-		slog.Warn(fmt.Sprintf("error making snapshot recorder: %s", err.Error()))
+		cobra.CheckErr(fmt.Errorf("snapshot: %w", err))
 	}
 	defer recorder.Close()
 	mux := http.NewServeMux()
@@ -219,6 +224,19 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 			if tool.Type == nil {
 				tool.Type = lo.ToPtr(anthropic.ToolTypeCustom)
 			}
+			if viper.GetBool("anthropic.disable_web_search_blocked_domains") {
+				if *tool.Type == anthropic.ToolTypeCustom && tool.Name == anthropic.ToolNameWebSearch {
+					if schemaType := gjson.GetBytes(tool.InputSchema, "type"); schemaType.String() == "object" {
+						key := fmt.Sprintf("properties.%s", "blocked_domains")
+						newInputSchema, err := sjson.DeleteBytes(tool.InputSchema, key)
+						if err == nil {
+							tool.InputSchema = newInputSchema
+						} else {
+							slog.Warn(fmt.Sprintf("[%d] error disabling %q in %s tool: %s", requestID, key, anthropic.ToolNameWebSearch, err.Error()))
+						}
+					}
+				}
+			}
 		}
 		if !viper.GetBool("options.disable_count_tokens_request") {
 			usage, err := prov.CountAnthropicTokens(countTokensCtx, &anthropic.CountTokensRequest{
@@ -241,7 +259,7 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 				slog.Info(fmt.Sprintf("[%d] request input tokens (estimated): %d", requestID, inputTokens))
 			}
 		}
-		hasServerTools := func() bool {
+		hasServerTools := sync.OnceValue(func() bool {
 			return lo.ContainsBy(req.Tools, func(tool *anthropic.Tool) bool {
 				isServerTool := tool.Type != nil && *tool.Type != anthropic.ToolTypeCustom
 				if isServerTool {
@@ -249,14 +267,14 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 				}
 				return isServerTool
 			})
-		}
-		useInterleavedThinking := func() bool {
+		})
+		useInterleavedThinking := sync.OnceValue(func() bool {
 			budgetTokensOverflow := req.Thinking != nil && req.Thinking.Type == anthropic.ThinkingTypeEnabled && req.Thinking.BudgetTokens >= req.MaxTokens
 			if budgetTokensOverflow {
 				var hasInterleavedFeatures bool
 				for _, features := range r.Header.Values(anthropic.HeaderBeta) {
 					if features != "" {
-						for _, feature := range strings.Split(features, ",") {
+						for feature := range strings.SplitSeq(features, ",") {
 							if strings.EqualFold(strings.TrimSpace(feature), anthropic.BetaFeatureInterleavedThinking20250514) {
 								hasInterleavedFeatures = true
 								break
@@ -270,7 +288,7 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 				slog.Info(fmt.Sprintf("[%d] request's thinking tokens (%d) is greater than max tokens (%d)", requestID, req.Thinking.BudgetTokens, req.MaxTokens))
 			}
 			return budgetTokensOverflow && !viper.GetBool("anthropic.disable_interleaved_thinking")
-		}
+		})
 		useAnthropicProvider := func(provider string) bool {
 			return hasServerTools() || useInterleavedThinking() || provider == ProviderAnthropic
 		}
@@ -563,6 +581,9 @@ func respondError(w http.ResponseWriter, status int, message string) {
 }
 
 func makeSnapshotRecorder(ctx context.Context, cfg string) (snapshot.Recorder, error) {
+	if cfg == "" {
+		return snapshot.NopRecorder(), nil
+	}
 	u, err := url.Parse(cfg)
 	if err != nil {
 		return nil, err

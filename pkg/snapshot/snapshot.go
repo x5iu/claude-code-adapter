@@ -15,6 +15,15 @@ type Recorder interface {
 	Record(snapshot *Snapshot) error
 }
 
+func NopRecorder() Recorder {
+	return nopRecorder{}
+}
+
+type nopRecorder struct{}
+
+func (nopRecorder) Close() error                    { return nil }
+func (nopRecorder) Record(snapshot *Snapshot) error { return nil }
+
 type Snapshot struct {
 	RequestTime        time.Time                               `json:"request_time"`
 	FinishTime         time.Time                               `json:"finish_time"`

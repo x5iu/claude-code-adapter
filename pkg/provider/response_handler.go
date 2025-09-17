@@ -115,6 +115,7 @@ func makeAnthropicStream(r io.ReadCloser) anthropic.MessageStream {
 				continue
 			}
 			eventType, isEvent := bytes.CutPrefix(line, []byte("event:"))
+			eventType = bytes.Clone(eventType) // next Scan overwrites bytes under eventType, a Clone keeps it unchanged
 			if isEvent && scanner.Scan() {
 				data, isData := bytes.CutPrefix(bytes.TrimSpace(scanner.Bytes()), []byte("data:"))
 				if !isData {

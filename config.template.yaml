@@ -20,6 +20,7 @@ anthropic:
   use_raw_request_body: true
   enable_pass_through_mode: false
   disable_interleaved_thinking: false
+  disable_web_search_blocked_domains: false
   force_thinking: false
   base_url: "https://api.anthropic.com"
   version: "2023-06-01"
