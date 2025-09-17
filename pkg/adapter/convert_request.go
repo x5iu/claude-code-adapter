@@ -408,7 +408,7 @@ func canonicalOpenRouterMessages(
 				}
 				switch format := getOpenRouterModelReasoningFormat(model); format {
 				case openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1:
-					refinedReasoningDetails := make([]*openrouter.ChatCompletionMessageReasoningDetail, 0, len(message.ReasoningDetails))
+					revisedReasoningDetails := make([]*openrouter.ChatCompletionMessageReasoningDetail, 0, len(message.ReasoningDetails))
 					for _, reasoningDetail := range message.ReasoningDetails {
 						reasoningDetail.Format = openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1
 						if reasoningDetail.Text != "" {
@@ -416,7 +416,7 @@ func canonicalOpenRouterMessages(
 						}
 						signature := reasoningDetail.Signature
 						reasoningDetail.Signature = ""
-						refinedReasoningDetails = append(refinedReasoningDetails, reasoningDetail)
+						revisedReasoningDetails = append(revisedReasoningDetails, reasoningDetail)
 						if signature != "" {
 							derivedReasoningDetail := &openrouter.ChatCompletionMessageReasoningDetail{
 								Type:   openrouter.ChatCompletionMessageReasoningDetailTypeEncrypted,
@@ -429,10 +429,10 @@ func canonicalOpenRouterMessages(
 							} else {
 								derivedReasoningDetail.Data = signature
 							}
-							refinedReasoningDetails = append(refinedReasoningDetails, derivedReasoningDetail)
+							revisedReasoningDetails = append(revisedReasoningDetails, derivedReasoningDetail)
 						}
 					}
-					message.ReasoningDetails = refinedReasoningDetails
+					message.ReasoningDetails = revisedReasoningDetails
 				}
 			}
 			if len(message.ToolCalls) > 0 {
