@@ -6,18 +6,19 @@ import (
 	"net/http"
 
 	"github.com/spf13/viper"
+	"github.com/x5iu/claude-code-adapter/pkg/utils/delimiter"
 )
 
 func init() {
-	viper.SetDefault("provider", "openrouter")
-	viper.SetDefault("openrouter.base_url", "https://openrouter.ai/api")
-	viper.MustBindEnv("openrouter.base_url", "OPENROUTER_BASE_URL")
-	viper.MustBindEnv("openrouter.api_key", "OPENROUTER_API_KEY")
-	viper.SetDefault("anthropic.base_url", "https://api.anthropic.com")
-	viper.SetDefault("anthropic.version", "2023-06-01")
-	viper.MustBindEnv("anthropic.base_url", "ANTHROPIC_BASE_URL")
-	viper.MustBindEnv("anthropic.api_key", "ANTHROPIC_API_KEY")
-	viper.MustBindEnv("anthropic.version", "ANTHROPIC_VERSION")
+	viper.SetDefault(delimiter.ViperKey("provider"), "openrouter")
+	viper.SetDefault(delimiter.ViperKey("openrouter", "base_url"), "https://openrouter.ai/api")
+	viper.MustBindEnv(delimiter.ViperKey("openrouter", "base_url"), "OPENROUTER_BASE_URL")
+	viper.MustBindEnv(delimiter.ViperKey("openrouter", "api_key"), "OPENROUTER_API_KEY")
+	viper.SetDefault(delimiter.ViperKey("anthropic", "base_url"), "https://api.anthropic.com")
+	viper.SetDefault(delimiter.ViperKey("anthropic", "version"), "2023-06-01")
+	viper.MustBindEnv(delimiter.ViperKey("anthropic", "base_url"), "ANTHROPIC_BASE_URL")
+	viper.MustBindEnv(delimiter.ViperKey("anthropic", "api_key"), "ANTHROPIC_API_KEY")
+	viper.MustBindEnv(delimiter.ViperKey("anthropic", "version"), "ANTHROPIC_VERSION")
 }
 
 type RequestOption = func(*http.Request)

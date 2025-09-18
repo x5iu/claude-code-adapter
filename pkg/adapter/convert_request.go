@@ -9,13 +9,14 @@ import (
 
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
+	"github.com/x5iu/claude-code-adapter/pkg/utils/delimiter"
 )
 
 func init() {
-	viper.SetDefault("options.strict", false)
-	viper.SetDefault("options.reasoning.format", string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
-	viper.SetDefault("options.reasoning.effort", "")
-	viper.SetDefault("options.models", map[string]string{})
+	viper.SetDefault(delimiter.ViperKey("options", "strict"), false)
+	viper.SetDefault(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
+	viper.SetDefault(delimiter.ViperKey("options", "reasoning", "effort"), "")
+	viper.SetDefault(delimiter.ViperKey("options", "models"), map[string]string{})
 }
 
 type ConvertRequestOptions struct {
@@ -40,7 +41,7 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 		TopP:                src.TopP,
 		Usage:               &openrouter.ChatCompletionUsageOptions{Include: true},
 	}
-	if modelMapper := viper.GetStringMapString("options.models"); modelMapper != nil {
+	if modelMapper := viper.GetStringMapString(delimiter.ViperKey("options", "models")); modelMapper != nil {
 		if targetModel, ok := modelMapper[dst.Model]; ok {
 			dst.Model = targetModel
 		}
@@ -95,7 +96,7 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 					Function: &openrouter.ChatCompletionFunction{
 						Name:        srcTool.Name,
 						Description: srcTool.Description,
-						Strict:      viper.GetBool("options.strict"),
+						Strict:      viper.GetBool(delimiter.ViperKey("options", "strict")),
 						Parameters:  openrouter.ChatCompletionJSONSchemaObject(srcTool.InputSchema),
 					},
 				}
@@ -123,7 +124,7 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 	switch format := getOpenRouterModelReasoningFormat(dst.Model); format {
 	case openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1:
 		if dst.Reasoning == nil {
-			if viper.GetBool("anthropic.force_thinking") {
+			if viper.GetBool(delimiter.ViperKey("anthropic", "force_thinking")) {
 				if dst.MaxTokens == nil || *dst.MaxTokens <= 1024 {
 					dst.MaxTokens = lo.ToPtr(32 * 1024)
 				}
@@ -139,7 +140,7 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 			dst.Model = model
 			effort = openrouter.ChatCompletionReasoningEffort(suffix)
 		} else {
-			effort = openrouter.ChatCompletionReasoningEffort(viper.GetString("options.reasoning.effort"))
+			effort = openrouter.ChatCompletionReasoningEffort(viper.GetString(delimiter.ViperKey("options", "reasoning", "effort")))
 		}
 		if !effort.IsEmpty() {
 			if dst.Reasoning == nil {
@@ -423,7 +424,7 @@ func canonicalOpenRouterMessages(
 								Format: openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1,
 								Index:  reasoningDetail.Index,
 							}
-							if delimiterIndex := strings.Index(signature, viper.GetString("options.reasoning.delimiter")); delimiterIndex != -1 {
+							if delimiterIndex := strings.Index(signature, viper.GetString(delimiter.ViperKey("options", "reasoning", "delimiter"))); delimiterIndex != -1 {
 								derivedReasoningDetail.ID = signature[:delimiterIndex]
 								derivedReasoningDetail.Data = signature[delimiterIndex+1:]
 							} else {
@@ -510,10 +511,10 @@ func convertAnthropicToolResultMessageContentsToOpenRouterChatCompletionMessageC
 func getOpenRouterModelReasoningFormat(
 	model string,
 ) (format openrouter.ChatCompletionMessageReasoningDetailFormat) {
-	if modelReasoningFormat := viper.GetStringMapString("openrouter.model_reasoning_format"); modelReasoningFormat != nil {
+	if modelReasoningFormat := viper.GetStringMapString(delimiter.ViperKey("openrouter", "model_reasoning_format")); modelReasoningFormat != nil {
 		if format, ok := modelReasoningFormat[model]; ok {
 			return openrouter.ChatCompletionMessageReasoningDetailFormat(format)
 		}
 	}
-	return openrouter.ChatCompletionMessageReasoningDetailFormat(viper.GetString("options.reasoning.format"))
+	return openrouter.ChatCompletionMessageReasoningDetailFormat(viper.GetString(delimiter.ViperKey("options", "reasoning", "format")))
 }

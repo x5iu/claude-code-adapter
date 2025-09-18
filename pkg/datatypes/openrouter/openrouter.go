@@ -13,10 +13,11 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/x5iu/claude-code-adapter/pkg/utils"
+	"github.com/x5iu/claude-code-adapter/pkg/utils/delimiter"
 )
 
 func init() {
-	viper.SetDefault("openrouter.allowed_providers", []string{ProviderAnthropic})
+	viper.SetDefault(delimiter.ViperKey("openrouter", "allowed_providers"), []string{ProviderAnthropic})
 }
 
 func WithIdentity(referer string, title string) func(*http.Request) {

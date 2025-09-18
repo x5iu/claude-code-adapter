@@ -8,6 +8,7 @@ import (
 
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
+	"github.com/x5iu/claude-code-adapter/pkg/utils/delimiter"
 )
 
 func TestConvertOpenRouterStreamToAnthropicStream_BasicConversion(t *testing.T) {
@@ -666,9 +667,9 @@ func TestConvertOpenRouterStreamToAnthropicStream_ProviderExtraction(t *testing.
 }
 
 func TestConvertOpenRouterStreamToAnthropicStream_EncryptedReasoning_CustomDelimiter(t *testing.T) {
-	prev := viper.GetString("options.reasoning.delimiter")
-	viper.Set("options.reasoning.delimiter", "|")
-	defer viper.Set("options.reasoning.delimiter", prev)
+	prev := viper.GetString(delimiter.ViperKey("options", "reasoning", "delimiter"))
+	viper.Set(delimiter.ViperKey("options", "reasoning", "delimiter"), "|")
+	defer viper.Set(delimiter.ViperKey("options", "reasoning", "delimiter"), prev)
 	chunks := []*openrouter.ChatCompletionChunk{
 		{
 			ID:    "chatcmpl-1",

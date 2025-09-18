@@ -33,6 +33,7 @@ import (
 	"github.com/x5iu/claude-code-adapter/pkg/snapshot"
 	"github.com/x5iu/claude-code-adapter/pkg/snapshot/jsonl"
 	"github.com/x5iu/claude-code-adapter/pkg/utils"
+	"github.com/x5iu/claude-code-adapter/pkg/utils/delimiter"
 )
 
 const (
@@ -60,7 +61,7 @@ func newServeCommand() *cobra.Command {
 				slog.Info("config file changed, reloading")
 			})
 			viper.WatchConfig()
-			if viper.GetBool("debug") {
+			if viper.GetBool(delimiter.ViperKey("debug")) {
 				slog.Info("using debug mode")
 				slog.SetLogLoggerLevel(slog.LevelDebug)
 				var debugBuf strings.Builder
@@ -85,18 +86,18 @@ func newServeCommand() *cobra.Command {
 	flags.Bool("use-raw-request-body", false, "use raw request body")
 	flags.Bool("disable-web-search-blocked-domains", false, "disable web search blocked domains")
 	flags.String("snapshot", "", "snapshot recorder config")
-	cobra.CheckErr(viper.BindPFlag("debug", flags.Lookup("debug")))
-	cobra.CheckErr(viper.BindPFlag("http.port", flags.Lookup("port")))
-	cobra.CheckErr(viper.BindPFlag("provider", flags.Lookup("provider")))
-	cobra.CheckErr(viper.BindPFlag("options.strict", flags.Lookup("strict")))
-	cobra.CheckErr(viper.BindPFlag("options.reasoning.format", flags.Lookup("format")))
-	cobra.CheckErr(viper.BindPFlag("options.context_window_resize_factor", flags.Lookup("context-window-resize-factor")))
-	cobra.CheckErr(viper.BindPFlag("anthropic.enable_pass_through_mode", flags.Lookup("enable-pass-through-mode")))
-	cobra.CheckErr(viper.BindPFlag("anthropic.disable_interleaved_thinking", flags.Lookup("disable-interleaved-thinking")))
-	cobra.CheckErr(viper.BindPFlag("anthropic.force_thinking", flags.Lookup("force-thinking")))
-	cobra.CheckErr(viper.BindPFlag("anthropic.use_raw_request_body", flags.Lookup("use-raw-request-body")))
-	cobra.CheckErr(viper.BindPFlag("anthropic.disable_web_search_blocked_domains", flags.Lookup("disable-web-search-blocked-domains")))
-	cobra.CheckErr(viper.BindPFlag("snapshot", flags.Lookup("snapshot")))
+	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("debug"), flags.Lookup("debug")))
+	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("http", "port"), flags.Lookup("port")))
+	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("provider"), flags.Lookup("provider")))
+	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("options", "strict"), flags.Lookup("strict")))
+	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("options", "reasoning", "format"), flags.Lookup("format")))
+	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("options", "context_window_resize_factor"), flags.Lookup("context-window-resize-factor")))
+	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("anthropic", "enable_pass_through_mode"), flags.Lookup("enable-pass-through-mode")))
+	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("anthropic", "disable_interleaved_thinking"), flags.Lookup("disable-interleaved-thinking")))
+	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("anthropic", "force_thinking"), flags.Lookup("force-thinking")))
+	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("anthropic", "use_raw_request_body"), flags.Lookup("use-raw-request-body")))
+	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("anthropic", "disable_web_search_blocked_domains"), flags.Lookup("disable-web-search-blocked-domains")))
+	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("snapshot"), flags.Lookup("snapshot")))
 	viper.SetOptions(viper.WithLogger(slog.Default()))
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
@@ -108,7 +109,7 @@ func newServeCommand() *cobra.Command {
 func serve(cmd *cobra.Command, _ []string) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	recorder, err := makeSnapshotRecorder(ctx, viper.GetString("snapshot"))
+	recorder, err := makeSnapshotRecorder(ctx, viper.GetString(delimiter.ViperKey("snapshot")))
 	if err != nil {
 		cobra.CheckErr(fmt.Errorf("snapshot: %w", err))
 	}
@@ -117,7 +118,7 @@ func serve(cmd *cobra.Command, _ []string) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("/v1/messages", onMessages(cmd, provider.NewProvider(), recorder))
 	server := &http.Server{
-		Addr:     fmt.Sprintf("127.0.0.1:%d", viper.GetUint16("http.port")),
+		Addr:     fmt.Sprintf("127.0.0.1:%d", viper.GetUint16(delimiter.ViperKey("http", "port"))),
 		Handler:  mux,
 		ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelWarn),
 	}
@@ -224,7 +225,7 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 			if tool.Type == nil {
 				tool.Type = lo.ToPtr(anthropic.ToolTypeCustom)
 			}
-			if viper.GetBool("anthropic.disable_web_search_blocked_domains") {
+			if viper.GetBool(delimiter.ViperKey("anthropic", "disable_web_search_blocked_domains")) {
 				if *tool.Type == anthropic.ToolTypeCustom && tool.Name == anthropic.ToolNameWebSearch {
 					if schemaType := gjson.GetBytes(tool.InputSchema, "type"); schemaType.String() == "object" {
 						key := fmt.Sprintf("properties.%s", "blocked_domains")
@@ -238,7 +239,7 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 				}
 			}
 		}
-		if !viper.GetBool("options.disable_count_tokens_request") {
+		if !viper.GetBool(delimiter.ViperKey("options", "disable_count_tokens_request")) {
 			usage, err := prov.CountAnthropicTokens(countTokensCtx, &anthropic.CountTokensRequest{
 				System:     req.System,
 				Model:      req.Model,
@@ -287,14 +288,14 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 				}
 				slog.Info(fmt.Sprintf("[%d] request's thinking tokens (%d) is greater than max tokens (%d)", requestID, req.Thinking.BudgetTokens, req.MaxTokens))
 			}
-			return budgetTokensOverflow && !viper.GetBool("anthropic.disable_interleaved_thinking")
+			return budgetTokensOverflow && !viper.GetBool(delimiter.ViperKey("anthropic", "disable_interleaved_thinking"))
 		})
 		useAnthropicProvider := func(provider string) bool {
 			return hasServerTools() || useInterleavedThinking() || provider == ProviderAnthropic
 		}
 		var (
 			stream     anthropic.MessageStream
-			ccProvider = viper.GetString("provider")
+			ccProvider = viper.GetString(delimiter.ViperKey("provider"))
 			orProvider = "<unknown>"
 		)
 		defer func() {
@@ -310,7 +311,7 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 			var (
 				header                http.Header
 				reader                io.ReadCloser
-				enablePassThroughMode = viper.GetBool("anthropic.enable_pass_through_mode")
+				enablePassThroughMode = viper.GetBool(delimiter.ViperKey("anthropic", "enable_pass_through_mode"))
 			)
 			defer func() {
 				sn.ResponseHeader = snapshot.Header(header)
@@ -326,7 +327,7 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 					provider.WithQuery("beta", "true"),
 					provider.WithHeaders(r.Header),
 				}
-				if viper.GetBool("anthropic.use_raw_request_body") {
+				if viper.GetBool(delimiter.ViperKey("anthropic", "use_raw_request_body")) {
 					options = append(options, provider.ReplaceBody(rawBody))
 				}
 				stream, header, err = prov.GenerateAnthropicMessage(r.Context(), req, options...)
@@ -379,7 +380,7 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 				ccProvider = ProviderOpenRouter
 				slog.Info(fmt.Sprintf("[%d] using provider %q", requestID, ProviderOpenRouter))
 				w.Header().Set("X-Provider", ProviderOpenRouter)
-				allowedProviders := viper.GetStringSlice("openrouter.allowed_providers")
+				allowedProviders := viper.GetStringSlice(delimiter.ViperKey("openrouter", "allowed_providers"))
 				openrouterRequest := adapter.ConvertAnthropicRequestToOpenRouterRequest(req)
 				sn.OpenRouterRequest = openrouterRequest
 				orStream, header, err := prov.CreateOpenRouterChatCompletion(

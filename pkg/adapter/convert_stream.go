@@ -10,11 +10,12 @@ import (
 
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
+	"github.com/x5iu/claude-code-adapter/pkg/utils/delimiter"
 )
 
 func init() {
-	viper.SetDefault("options.reasoning.delimiter", string(filepath.Separator))
-	viper.SetDefault("options.context_window_resize_factor", 1.0)
+	viper.SetDefault(delimiter.ViperKey("options", "reasoning", "delimiter"), string(filepath.Separator))
+	viper.SetDefault(delimiter.ViperKey("options", "context_window_resize_factor"), 1.0)
 }
 
 type ConvertStreamOptions struct {
@@ -51,7 +52,7 @@ func ConvertOpenRouterStreamToAnthropicStream(
 	for _, applyOption := range options {
 		applyOption(convertOptions)
 	}
-	contextWindowResizeFactor := viper.GetFloat64("options.context_window_resize_factor")
+	contextWindowResizeFactor := viper.GetFloat64(delimiter.ViperKey("options", "context_window_resize_factor"))
 	return func(yield func(anthropic.Event, error) bool) {
 		var (
 			startOnce  sync.Once
@@ -176,7 +177,7 @@ func ConvertOpenRouterStreamToAnthropicStream(
 								if reasoningDetailData := reasoningDetail.Data; reasoningDetailData != "" {
 									var signature string
 									if reasoningDetailID := reasoningDetail.ID; reasoningDetailID != "" {
-										signature = reasoningDetailID + viper.GetString("options.reasoning.delimiter") + reasoningDetailData
+										signature = reasoningDetailID + viper.GetString(delimiter.ViperKey("options", "reasoning", "delimiter")) + reasoningDetailData
 									} else {
 										signature = reasoningDetailData
 									}

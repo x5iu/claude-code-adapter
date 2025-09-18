@@ -1,13 +1,16 @@
-package snapshot_test
+package snapshot
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
+	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 
-	"github.com/x5iu/claude-code-adapter/pkg/snapshot"
+	"github.com/x5iu/claude-code-adapter/pkg/utils/delimiter"
 )
 
 func TestConfig_YAMLToJSON_Full(t *testing.T) {
@@ -42,7 +45,7 @@ openrouter:
     - "google-vertex"
     - "amazon-bedrock"
 `
-	var cfg snapshot.Config
+	var cfg Config
 	if err := yaml.Unmarshal([]byte(yamlData), &cfg); err != nil {
 		t.Fatalf("yaml unmarshal error: %v", err)
 	}
@@ -65,7 +68,7 @@ openrouter:
 	if err != nil {
 		t.Fatalf("json marshal error: %v", err)
 	}
-	var cfg2 snapshot.Config
+	var cfg2 Config
 	if err := json.Unmarshal(b, &cfg2); err != nil {
 		t.Fatalf("json unmarshal error: %v", err)
 	}
@@ -78,7 +81,7 @@ func TestConfig_YAMLToJSON_Partial(t *testing.T) {
 	yamlData := `
 provider: "anthropic"
 `
-	var cfg snapshot.Config
+	var cfg Config
 	if err := yaml.Unmarshal([]byte(yamlData), &cfg); err != nil {
 		t.Fatalf("yaml unmarshal error: %v", err)
 	}
@@ -92,7 +95,7 @@ provider: "anthropic"
 	if err != nil {
 		t.Fatalf("json marshal error: %v", err)
 	}
-	var cfg2 snapshot.Config
+	var cfg2 Config
 	if err := json.Unmarshal(b, &cfg2); err != nil {
 		t.Fatalf("json unmarshal error: %v", err)
 	}
@@ -119,7 +122,7 @@ openrouter:
     - "google-vertex"
     - "amazon-bedrock"
 `
-	var cfg snapshot.Config
+	var cfg Config
 	if err := yaml.Unmarshal([]byte(yamlData), &cfg); err != nil {
 		t.Fatalf("yaml unmarshal error: %v", err)
 	}
@@ -160,7 +163,7 @@ openrouter:
 }
 
 func TestConfig_JSONKeysAndNulls(t *testing.T) {
-	cfg := snapshot.Config{Provider: "anthropic"}
+	cfg := Config{Provider: "anthropic"}
 	b, err := json.Marshal(&cfg)
 	if err != nil {
 		t.Fatalf("json marshal error: %v", err)
@@ -185,7 +188,7 @@ func TestConfig_JSONKeysAndNulls(t *testing.T) {
 
 func TestConfig_YAMLToJSON_Empty(t *testing.T) {
 	yamlData := ``
-	var cfg snapshot.Config
+	var cfg Config
 	if err := yaml.Unmarshal([]byte(yamlData), &cfg); err != nil {
 		t.Fatalf("yaml unmarshal error: %v", err)
 	}
@@ -193,11 +196,92 @@ func TestConfig_YAMLToJSON_Empty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json marshal error: %v", err)
 	}
-	var cfg2 snapshot.Config
+	var cfg2 Config
 	if err := json.Unmarshal(b, &cfg2); err != nil {
 		t.Fatalf("json unmarshal error: %v", err)
 	}
 	if !reflect.DeepEqual(cfg, cfg2) {
 		t.Fatalf("config mismatch after YAML->JSON round trip (empty)")
+	}
+}
+
+func TestHeader_MarshalJSON_Basic(t *testing.T) {
+	h := Header{
+		"Single":    {"one"},
+		"Multi":     {"a", "b"},
+		"ZeroSlice": {},
+		"ZeroNil":   nil,
+	}
+	b, err := json.Marshal(h)
+	if err != nil {
+		t.Fatalf("json marshal error: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("json unmarshal error: %v", err)
+	}
+	if _, ok := m["ZeroSlice"]; ok {
+		t.Fatalf("expected ZeroSlice to be omitted")
+	}
+	if _, ok := m["ZeroNil"]; ok {
+		t.Fatalf("expected ZeroNil to be omitted")
+	}
+	if v, ok := m["Single"]; !ok || v != "one" {
+		t.Fatalf("expected Single to be string 'one', got: %v (present=%v)", v, ok)
+	}
+	arr, ok := m["Multi"].([]any)
+	if !ok || len(arr) != 2 || arr[0] != "a" || arr[1] != "b" {
+		t.Fatalf("expected Multi to be [\"a\", \"b\"], got: %#v", m["Multi"])
+	}
+}
+
+func TestHeader_MarshalJSON_Empty(t *testing.T) {
+	var h Header
+	b, err := json.Marshal(h)
+	if err != nil {
+		t.Fatalf("json marshal error: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("json unmarshal error: %v", err)
+	}
+	if len(m) != 0 {
+		t.Fatalf("expected empty JSON object, got: %#v", m)
+	}
+}
+
+func TestViper_Unmarshal_Config_ModelReasoningFormatDots(t *testing.T) {
+	yamlData := `
+openrouter:
+  model_reasoning_format:
+    anthropic/claude-sonnet-4.1: "anthropic-claude-v1"
+    openai/gpt-5.1: "openai-responses-v1"
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(yamlData), 0644); err != nil {
+		t.Fatalf("write temp config error: %v", err)
+	}
+	v := viper.NewWithOptions(viper.KeyDelimiter(delimiter.ViperKeyDelimiter))
+	v.SetConfigFile(path)
+	v.SetConfigType("yaml")
+	if err := v.ReadInConfig(); err != nil {
+		t.Fatalf("read config error: %v", err)
+	}
+	var cfg Config
+	if err := v.Unmarshal(&cfg); err != nil {
+		t.Fatalf("viper unmarshal error: %v", err)
+	}
+	if cfg.OpenRouter == nil {
+		t.Fatalf("openrouter should not be nil")
+	}
+	if len(cfg.OpenRouter.ModelReasoningFormat) != 2 {
+		t.Fatalf("unexpected model_reasoning_format len: %d", len(cfg.OpenRouter.ModelReasoningFormat))
+	}
+	if cfg.OpenRouter.ModelReasoningFormat["anthropic/claude-sonnet-4.1"] != "anthropic-claude-v1" {
+		t.Fatalf("unexpected value for anthropic/claude-sonnet-4.1: %s", cfg.OpenRouter.ModelReasoningFormat["anthropic/claude-sonnet-4.1"])
+	}
+	if cfg.OpenRouter.ModelReasoningFormat["openai/gpt-5.1"] != "openai-responses-v1" {
+		t.Fatalf("unexpected value for openai/gpt-5.1: %s", cfg.OpenRouter.ModelReasoningFormat["openai/gpt-5.1"])
 	}
 }
