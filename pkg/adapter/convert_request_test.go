@@ -31,7 +31,6 @@ func TestConvertAnthropicRequestToOpenRouterRequest_BasicFields(t *testing.T) {
 			},
 			want: func(dst *openrouter.CreateChatCompletionRequest) bool {
 				return dst.Model == "claude-3-5-sonnet-20241022" &&
-					*dst.MaxCompletionTokens == 1000 &&
 					*dst.MaxTokens == 1000 &&
 					*dst.Temperature == 0.7 &&
 					*dst.TopK == 10 &&
@@ -47,8 +46,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_BasicFields(t *testing.T) {
 			},
 			want: func(dst *openrouter.CreateChatCompletionRequest) bool {
 				// Verify that MaxTokens from Anthropic is mapped to both fields
-				return dst.MaxCompletionTokens != nil && *dst.MaxCompletionTokens == 2048 &&
-					dst.MaxTokens != nil && *dst.MaxTokens == 2048
+				return dst.MaxTokens != nil && *dst.MaxTokens == 2048
 			},
 		},
 		{
@@ -60,8 +58,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_BasicFields(t *testing.T) {
 			},
 			want: func(dst *openrouter.CreateChatCompletionRequest) bool {
 				// Both fields should be set to 0
-				return dst.MaxCompletionTokens != nil && *dst.MaxCompletionTokens == 0 &&
-					dst.MaxTokens != nil && *dst.MaxTokens == 0
+				return dst.MaxTokens != nil && *dst.MaxTokens == 0
 			},
 		},
 		{
@@ -1696,7 +1693,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_NewMessageFormat(t *testing.
 func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_AnthropicClaudeV1(t *testing.T) {
 	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
 	prevEffort := viper.GetString(delimiter.ViperKey("options", "reasoning", "effort"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"),string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
+	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
 	viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), "high")
 	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
 	defer viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), prevEffort)
@@ -1726,7 +1723,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_AnthropicCla
 func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_OpenAIResponsesV1(t *testing.T) {
 	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
 	prevEffort := viper.GetString(delimiter.ViperKey("options", "reasoning", "effort"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"),string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
+	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
 	viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), "medium")
 	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
 	defer viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), prevEffort)
@@ -1756,7 +1753,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_OpenAIRespon
 func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_ModelEffortSuffix(t *testing.T) {
 	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
 	prevEffort := viper.GetString(delimiter.ViperKey("options", "reasoning", "effort"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"),string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
+	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
 	viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), "low")
 	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
 	defer viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), prevEffort)
@@ -1789,7 +1786,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_ModelEffor
 func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_NoSuffixKeepsConfigEffort(t *testing.T) {
 	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
 	prevEffort := viper.GetString(delimiter.ViperKey("options", "reasoning", "effort"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"),string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
+	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
 	viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), "low")
 	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
 	defer viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), prevEffort)
@@ -1822,7 +1819,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_NoSuffixKe
 func TestConvertAnthropicRequestToOpenRouterRequest_AnthropicClaudeV1_IgnoreSuffixAndKeepModel(t *testing.T) {
 	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
 	prevEffort := viper.GetString(delimiter.ViperKey("options", "reasoning", "effort"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"),string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
+	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
 	viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), "high")
 	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
 	defer viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), prevEffort)
@@ -1855,7 +1852,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_AnthropicClaudeV1_IgnoreSuff
 func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_ModelEffortSuffix_NoThinking(t *testing.T) {
 	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
 	prevEffort := viper.GetString(delimiter.ViperKey("options", "reasoning", "effort"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"),string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
+	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
 	viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), "low")
 	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
 	defer viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), prevEffort)
@@ -1890,7 +1887,7 @@ func TestDefaultReasoningEffort(t *testing.T) {
 func TestForceThinking_AnthropicClaudeV1_NoReasoningAddsReasoning(t *testing.T) {
 	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
 	prevForce := viper.GetBool(delimiter.ViperKey("anthropic", "force_thinking"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"),string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
+	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
 	viper.Set(delimiter.ViperKey("anthropic", "force_thinking"), true)
 	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
 	defer viper.Set(delimiter.ViperKey("anthropic", "force_thinking"), prevForce)
@@ -1917,7 +1914,7 @@ func TestForceThinking_AnthropicClaudeV1_NoReasoningAddsReasoning(t *testing.T) 
 func TestForceThinking_DoesNotOverrideExistingReasoning(t *testing.T) {
 	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
 	prevForce := viper.GetBool(delimiter.ViperKey("anthropic", "force_thinking"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"),string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
+	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
 	viper.Set(delimiter.ViperKey("anthropic", "force_thinking"), true)
 	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
 	defer viper.Set(delimiter.ViperKey("anthropic", "force_thinking"), prevForce)
@@ -1942,7 +1939,7 @@ func TestForceThinking_DoesNotOverrideExistingReasoning(t *testing.T) {
 func TestForceThinking_MaxTokensBoundaries(t *testing.T) {
 	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
 	prevForce := viper.GetBool(delimiter.ViperKey("anthropic", "force_thinking"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"),string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
+	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
 	viper.Set(delimiter.ViperKey("anthropic", "force_thinking"), true)
 	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
 	defer viper.Set(delimiter.ViperKey("anthropic", "force_thinking"), prevForce)

@@ -47,9 +47,9 @@ func TestCreateOpenRouterChatCompletion_ClaudeThinking(t *testing.T) {
 				},
 			},
 		},
-		MaxCompletionTokens: lo.ToPtr(100),
-		Temperature:         lo.ToPtr(0.7),
-		StreamOptions:       &openrouter.ChatCompletionStreamOptions{IncludeUsage: true},
+		MaxTokens:     lo.ToPtr(100),
+		Temperature:   lo.ToPtr(0.7),
+		StreamOptions: &openrouter.ChatCompletionStreamOptions{IncludeUsage: true},
 	}
 
 	// Call the API
@@ -119,8 +119,8 @@ func TestCreateOpenRouterChatCompletion_DataFormat(t *testing.T) {
 				},
 			},
 		},
-		MaxCompletionTokens: lo.ToPtr(50),
-		StreamOptions:       &openrouter.ChatCompletionStreamOptions{IncludeUsage: true},
+		MaxTokens:     lo.ToPtr(50),
+		StreamOptions: &openrouter.ChatCompletionStreamOptions{IncludeUsage: true},
 	}
 
 	stream, header, err := provider.CreateOpenRouterChatCompletion(ctx, req)
@@ -194,8 +194,8 @@ func TestCreateOpenRouterChatCompletion_WithProviderPreference(t *testing.T) {
 				},
 			},
 		},
-		MaxCompletionTokens: lo.ToPtr(100),
-		StreamOptions:       &openrouter.ChatCompletionStreamOptions{IncludeUsage: true},
+		MaxTokens:     lo.ToPtr(100),
+		StreamOptions: &openrouter.ChatCompletionStreamOptions{IncludeUsage: true},
 	}
 
 	// Call the API with provider preference
@@ -469,9 +469,9 @@ func TestCreateOpenRouterChatCompletion_ReasoningValidation(t *testing.T) {
 				},
 			},
 		},
-		Reasoning:           &openrouter.ChatCompletionReasoning{MaxTokens: 1024, Enabled: true},
-		MaxCompletionTokens: lo.ToPtr(2048),
-		StreamOptions:       &openrouter.ChatCompletionStreamOptions{IncludeUsage: true},
+		Reasoning:     &openrouter.ChatCompletionReasoning{MaxTokens: 1024, Enabled: true},
+		MaxTokens:     lo.ToPtr(2048),
+		StreamOptions: &openrouter.ChatCompletionStreamOptions{IncludeUsage: true},
 	}
 
 	stream, header, err := provider.CreateOpenRouterChatCompletion(ctx, req)
@@ -568,8 +568,8 @@ func TestCreateOpenRouterChatCompletion_CachedTokensAcrossRequests(t *testing.T)
 					},
 				},
 			},
-			MaxCompletionTokens: lo.ToPtr(64),
-			StreamOptions:       &openrouter.ChatCompletionStreamOptions{IncludeUsage: true},
+			MaxTokens:     lo.ToPtr(64),
+			StreamOptions: &openrouter.ChatCompletionStreamOptions{IncludeUsage: true},
 		}
 	}
 	getCached := func() (int64, error) {

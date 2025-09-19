@@ -88,25 +88,24 @@ type ChatCompletionStream iter.Seq2[*ChatCompletionChunk, error]
 // CreateChatCompletionRequest follows OpenRouter request format
 // reference: https://openrouter.ai/docs/api-reference/
 type CreateChatCompletionRequest struct {
-	Messages            []*ChatCompletionMessage       `json:"messages"`
-	Model               string                         `json:"model"`
-	MaxCompletionTokens *int                           `json:"max_completion_tokens,omitempty"`
-	MaxTokens           *int                           `json:"max_tokens,omitempty"`
-	ParallelToolCalls   *bool                          `json:"parallel_tool_calls,omitempty"`
-	ReasoningEffort     *ChatCompletionReasoningEffort `json:"reasoning_effort,omitempty"`
-	Reasoning           *ChatCompletionReasoning       `json:"reasoning,omitempty"`
-	ResponseFormat      *ChatCompletionResponseFormat  `json:"response_format,omitempty"`
-	Stop                ChatCompletionStop             `json:"stop,omitempty"`
-	StreamOptions       *ChatCompletionStreamOptions   `json:"stream_options,omitempty"`
-	Temperature         *float64                       `json:"temperature,omitempty"`
-	ToolChoice          *ChatCompletionToolChoice      `json:"tool_choice,omitempty"`
-	Tools               []*ChatCompletionTool          `json:"tools,omitempty"`
-	TopP                *float64                       `json:"top_p,omitempty"`
-	TopK                *int                           `json:"top_k,omitempty"`
-	User                string                         `json:"user,omitempty"`
-	Stream              utils.True                     `json:"stream"`
-	Provider            *ProviderPreference            `json:"provider,omitempty"`
-	Usage               *ChatCompletionUsageOptions    `json:"usage,omitempty"`
+	Messages          []*ChatCompletionMessage       `json:"messages"`
+	Model             string                         `json:"model"`
+	MaxTokens         *int                           `json:"max_tokens,omitempty"`
+	ParallelToolCalls *bool                          `json:"parallel_tool_calls,omitempty"`
+	ReasoningEffort   *ChatCompletionReasoningEffort `json:"reasoning_effort,omitempty"`
+	Reasoning         *ChatCompletionReasoning       `json:"reasoning,omitempty"`
+	ResponseFormat    *ChatCompletionResponseFormat  `json:"response_format,omitempty"`
+	Stop              ChatCompletionStop             `json:"stop,omitempty"`
+	StreamOptions     *ChatCompletionStreamOptions   `json:"stream_options,omitempty"`
+	Temperature       *float64                       `json:"temperature,omitempty"`
+	ToolChoice        *ChatCompletionToolChoice      `json:"tool_choice,omitempty"`
+	Tools             []*ChatCompletionTool          `json:"tools,omitempty"`
+	TopP              *float64                       `json:"top_p,omitempty"`
+	TopK              *int                           `json:"top_k,omitempty"`
+	User              string                         `json:"user,omitempty"`
+	Stream            utils.True                     `json:"stream"`
+	Provider          *ProviderPreference            `json:"provider,omitempty"`
+	Usage             *ChatCompletionUsageOptions    `json:"usage,omitempty"`
 }
 
 const (

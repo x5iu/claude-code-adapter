@@ -33,13 +33,12 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 		applyOption(convertOptions)
 	}
 	dst = &openrouter.CreateChatCompletionRequest{
-		Model:               src.Model,
-		MaxCompletionTokens: lo.ToPtr(src.MaxTokens),
-		MaxTokens:           lo.ToPtr(src.MaxTokens),
-		Temperature:         lo.ToPtr(src.Temperature),
-		TopK:                src.TopK,
-		TopP:                src.TopP,
-		Usage:               &openrouter.ChatCompletionUsageOptions{Include: true},
+		Model:       src.Model,
+		MaxTokens:   lo.ToPtr(src.MaxTokens),
+		Temperature: lo.ToPtr(src.Temperature),
+		TopK:        src.TopK,
+		TopP:        src.TopP,
+		Usage:       &openrouter.ChatCompletionUsageOptions{Include: true},
 	}
 	if modelMapper := viper.GetStringMapString(delimiter.ViperKey("options", "models")); modelMapper != nil {
 		if targetModel, ok := modelMapper[dst.Model]; ok {
