@@ -13,7 +13,6 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/spf13/viper"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
 	"github.com/x5iu/claude-code-adapter/pkg/utils"
@@ -34,14 +33,14 @@ func NewProvider() Provider {
 type implProvider struct{}
 
 var (
-	addrProviderTmplMakeAnthropicMessagesRequest     = template.Must(template.New("AddressMakeAnthropicMessagesRequest").Funcs(template.FuncMap{"get_config": viper.GetString, "json_encode": utils.JSONEncode}).Parse("{{ get_config \"anthropic.base_url\" }}/v1/messages"))
-	headerProviderTmplMakeAnthropicMessagesRequest   = template.Must(template.New("HeaderMakeAnthropicMessagesRequest").Funcs(template.FuncMap{"get_config": viper.GetString, "json_encode": utils.JSONEncode}).Parse("Content-Type: application/json\r\nX-API-Key: {{ get_config \"anthropic.api_key\" }}\r\nAnthropic-Version: {{ get_config \"anthropic.version\" }}\r\n\r\n"))
-	addrProviderTmplGenerateAnthropicMessage         = template.Must(template.New("AddressGenerateAnthropicMessage").Funcs(template.FuncMap{"get_config": viper.GetString, "json_encode": utils.JSONEncode}).Parse("{{ get_config \"anthropic.base_url\" }}/v1/messages"))
-	headerProviderTmplGenerateAnthropicMessage       = template.Must(template.New("HeaderGenerateAnthropicMessage").Funcs(template.FuncMap{"get_config": viper.GetString, "json_encode": utils.JSONEncode}).Parse("Content-Type: application/json\r\nX-API-Key: {{ get_config \"anthropic.api_key\" }}\r\nAnthropic-Version: {{ get_config \"anthropic.version\" }}\r\n\r\n{{ json_encode .req }}"))
-	addrProviderTmplCountAnthropicTokens             = template.Must(template.New("AddressCountAnthropicTokens").Funcs(template.FuncMap{"get_config": viper.GetString, "json_encode": utils.JSONEncode}).Parse("{{ get_config \"anthropic.base_url\" }}/v1/messages/count_tokens"))
-	headerProviderTmplCountAnthropicTokens           = template.Must(template.New("HeaderCountAnthropicTokens").Funcs(template.FuncMap{"get_config": viper.GetString, "json_encode": utils.JSONEncode}).Parse("Content-Type: application/json\r\nX-API-Key: {{ get_config \"anthropic.api_key\" }}\r\nAnthropic-Version: {{ get_config \"anthropic.version\" }}\r\n\r\n{{ json_encode .req }}"))
-	addrProviderTmplCreateOpenRouterChatCompletion   = template.Must(template.New("AddressCreateOpenRouterChatCompletion").Funcs(template.FuncMap{"get_config": viper.GetString, "json_encode": utils.JSONEncode}).Parse("{{ get_config \"openrouter.base_url\" }}/v1/chat/completions"))
-	headerProviderTmplCreateOpenRouterChatCompletion = template.Must(template.New("HeaderCreateOpenRouterChatCompletion").Funcs(template.FuncMap{"get_config": viper.GetString, "json_encode": utils.JSONEncode}).Parse("Content-Type: application/json\r\nAuthorization: Bearer {{ get_config \"openrouter.api_key\" }}\r\n\r\n{{ json_encode .req }}"))
+	addrProviderTmplMakeAnthropicMessagesRequest     = template.Must(template.New("AddressMakeAnthropicMessagesRequest").Funcs(template.FuncMap{"get_config": getConfig, "json_encode": utils.JSONEncode}).Parse("{{ get_config \"anthropic\" \"base_url\" }}/v1/messages"))
+	headerProviderTmplMakeAnthropicMessagesRequest   = template.Must(template.New("HeaderMakeAnthropicMessagesRequest").Funcs(template.FuncMap{"get_config": getConfig, "json_encode": utils.JSONEncode}).Parse("Content-Type: application/json\r\nX-API-Key: {{ get_config \"anthropic\" \"api_key\" }}\r\nAnthropic-Version: {{ get_config \"anthropic\" \"version\" }}\r\n\r\n"))
+	addrProviderTmplGenerateAnthropicMessage         = template.Must(template.New("AddressGenerateAnthropicMessage").Funcs(template.FuncMap{"get_config": getConfig, "json_encode": utils.JSONEncode}).Parse("{{ get_config \"anthropic\" \"base_url\" }}/v1/messages"))
+	headerProviderTmplGenerateAnthropicMessage       = template.Must(template.New("HeaderGenerateAnthropicMessage").Funcs(template.FuncMap{"get_config": getConfig, "json_encode": utils.JSONEncode}).Parse("Content-Type: application/json\r\nX-API-Key: {{ get_config \"anthropic\" \"api_key\" }}\r\nAnthropic-Version: {{ get_config \"anthropic\" \"version\" }}\r\n\r\n{{ json_encode .req }}"))
+	addrProviderTmplCountAnthropicTokens             = template.Must(template.New("AddressCountAnthropicTokens").Funcs(template.FuncMap{"get_config": getConfig, "json_encode": utils.JSONEncode}).Parse("{{ get_config \"anthropic\" \"base_url\" }}/v1/messages/count_tokens"))
+	headerProviderTmplCountAnthropicTokens           = template.Must(template.New("HeaderCountAnthropicTokens").Funcs(template.FuncMap{"get_config": getConfig, "json_encode": utils.JSONEncode}).Parse("Content-Type: application/json\r\nX-API-Key: {{ get_config \"anthropic\" \"api_key\" }}\r\nAnthropic-Version: {{ get_config \"anthropic\" \"version\" }}\r\n\r\n{{ json_encode .req }}"))
+	addrProviderTmplCreateOpenRouterChatCompletion   = template.Must(template.New("AddressCreateOpenRouterChatCompletion").Funcs(template.FuncMap{"get_config": getConfig, "json_encode": utils.JSONEncode}).Parse("{{ get_config \"openrouter\" \"base_url\" }}/v1/chat/completions"))
+	headerProviderTmplCreateOpenRouterChatCompletion = template.Must(template.New("HeaderCreateOpenRouterChatCompletion").Funcs(template.FuncMap{"get_config": getConfig, "json_encode": utils.JSONEncode}).Parse("Content-Type: application/json\r\nAuthorization: Bearer {{ get_config \"openrouter\" \"api_key\" }}\r\n\r\n{{ json_encode .req }}"))
 )
 
 func (*implProvider) responseHandler() *ResponseHandler {

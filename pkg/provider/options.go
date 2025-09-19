@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/spf13/viper"
+
 	"github.com/x5iu/claude-code-adapter/pkg/utils/delimiter"
 )
 
@@ -19,6 +20,10 @@ func init() {
 	viper.MustBindEnv(delimiter.ViperKey("anthropic", "base_url"), "ANTHROPIC_BASE_URL")
 	viper.MustBindEnv(delimiter.ViperKey("anthropic", "api_key"), "ANTHROPIC_API_KEY")
 	viper.MustBindEnv(delimiter.ViperKey("anthropic", "version"), "ANTHROPIC_VERSION")
+}
+
+func getConfig(key ...string) string {
+	return viper.GetString(delimiter.ViperKey(key...))
 }
 
 type RequestOption = func(*http.Request)
