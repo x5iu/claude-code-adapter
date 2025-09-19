@@ -13,16 +13,18 @@ This is a Go-based Claude Code Adapter that acts as a proxy server, converting b
 ```bash
 # Build the CLI binary
 go build -o claude-code-adapter ./cmd/claude-code-adapter-cli
-
-# Build with version info
-go build -ldflags "-X main.Version=v0.1.0" -o claude-code-adapter ./cmd/claude-code-adapter-cli
 ```
+
+Version is defined in cmd/claude-code-adapter-cli/claude-code-adapter.go:16 and used by the server.
 
 ### Running the Server
 
 ```bash
 # Start the proxy server with default settings (port 2194)
 ./claude-code-adapter serve
+
+# Run directly without building
+go run ./cmd/claude-code-adapter-cli serve
 
 # Start with custom port
 ./claude-code-adapter serve -p 8080
@@ -44,9 +46,15 @@ go build -ldflags "-X main.Version=v0.1.0" -o claude-code-adapter ./cmd/claude-c
 ./claude-code-adapter serve --disable-interleaved-thinking
 ./claude-code-adapter serve --force-thinking
 
+# Record request/response snapshots to JSONL
+./claude-code-adapter serve --snapshot jsonl:./snapshots.jsonl
+
 # Use custom config file
 ./claude-code-adapter serve -c ./config.yaml
 # Config searched in: $HOME/.claude-code-adapter/config.yaml, ./config.yaml
+
+# Show serve help
+./claude-code-adapter serve --help
 ```
 
 ### Configuration
@@ -233,6 +241,7 @@ The project uses `github.com/x5iu/defc` for HTTP client code generation. Key fea
 
 ### Test Requirements
 
+- Set `ANTHROPIC_BASE_URL` before running tests
 - OpenRouter tests require `OPENROUTER_API_KEY` environment variable
 - Anthropic tests require `ANTHROPIC_API_KEY` environment variable  
 - Tests will skip automatically if required API keys are not provided

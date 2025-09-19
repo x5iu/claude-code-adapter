@@ -13,7 +13,7 @@ func newClaudeClaudeAdapterCliCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "claude-code-adapter-cli [COMMAND] [OPTIONS]",
 		Short:         "Claude Code Adapter Command-Line Interface",
-		Version:       "v0.2.0",
+		Version:       "v0.3.0",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}

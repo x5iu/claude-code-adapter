@@ -16,6 +16,7 @@ A Go-based proxy server that seamlessly converts between Anthropic's Messages AP
 - **Provider Preferences**: Configurable provider filtering for OpenRouter
 - **Code Generation**: Automatic HTTP client generation using `defc`
 - **Enhanced Logging**: Detailed request tracking with model and provider information
+- **Request/Response Snapshots**: Record requests and responses to JSONL via `--snapshot`
 - **Comprehensive Testing**: 87%+ test coverage with integration tests
 
 ## Quick Start
@@ -37,6 +38,9 @@ go build -o claude-code-adapter ./cmd/claude-code-adapter-cli
 # Start the proxy server (default port 2194)
 ./claude-code-adapter serve
 
+# Run directly without building
+go run ./cmd/claude-code-adapter-cli serve
+
 # Start with custom port
 ./claude-code-adapter serve -p 8080
 
@@ -52,6 +56,9 @@ go build -o claude-code-adapter ./cmd/claude-code-adapter-cli
 # Enable pass-through mode for Anthropic (bypasses conversion)
 ./claude-code-adapter serve --enable-pass-through-mode
 
+# Record request/response snapshots to JSONL
+./claude-code-adapter serve --snapshot jsonl:./snapshots.jsonl
+
 # Reasoning and behavior flags
 ./claude-code-adapter serve --strict
 ./claude-code-adapter serve --format anthropic-claude-v1
@@ -61,9 +68,28 @@ go build -o claude-code-adapter ./cmd/claude-code-adapter-cli
 
 # Use custom config file
 ./claude-code-adapter serve -c ./config.yaml
+# Config searched in: $HOME/.claude-code-adapter/config.yaml, ./config.yaml
+
+# Show serve help
+./claude-code-adapter serve --help
 ```
 
 The server will listen on `127.0.0.1:2194` and accept Anthropic Messages API requests at `/v1/messages`.
+
+### Snapshots
+
+Enable snapshot recording to a JSON Lines file using the `--snapshot` flag.
+
+```bash
+./claude-code-adapter serve --snapshot jsonl:./snapshots.jsonl
+```
+
+Notes:
+- Format: JSON Lines; appends one record per request/response
+- Default: disabled; enable only when needed
+- WARNING: config.template.yaml enables snapshots for demonstration (snapshot: "jsonl:snapshot.jsonl"); set snapshot: "" or omit this key in your config.yaml to keep recording disabled
+- Paths like jsonl:./snapshots.jsonl or jsonl:snapshots.jsonl are relative to the current working directory
+- Security: snapshots may contain sensitive content; handle the file securely
 
 ## Configuration
 
