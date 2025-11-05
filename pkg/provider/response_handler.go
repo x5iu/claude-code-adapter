@@ -3,12 +3,16 @@ package provider
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"iter"
 	"net/http"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
@@ -106,8 +110,44 @@ func unmarshalAnthropicEvent[E anthropic.Event](data []byte) (anthropic.Event, e
 }
 
 func makeAnthropicStream(r io.ReadCloser) anthropic.MessageStream {
-	return func(yield func(anthropic.Event, error) bool) {
+	return func(yieldimpl func(anthropic.Event, error) bool) {
 		defer r.Close()
+		var (
+			mu   sync.Mutex
+			stop atomic.Bool
+		)
+		defer stop.Store(true)
+		yield := func(event anthropic.Event, err error) bool {
+			if stop.Load() {
+				return false
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if stop.Load() {
+				return false
+			}
+			if !yieldimpl(event, err) {
+				stop.Store(true)
+				return false
+			}
+			return true
+		}
+		pingCtx, pingCancel := context.WithCancel(context.Background())
+		defer pingCancel()
+		go func() {
+			ticker := time.NewTicker(3 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-pingCtx.Done():
+					return
+				case <-ticker.C:
+					if !yield(&anthropic.EventPing{Type: anthropic.EventTypePing}, nil) {
+						return
+					}
+				}
+			}
+		}()
 		scanner := bufio.NewScanner(r)
 		for scanner.Scan() {
 			line := bytes.TrimSpace(scanner.Bytes())
