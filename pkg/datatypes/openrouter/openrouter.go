@@ -358,11 +358,11 @@ const (
 
 type ChatCompletionMessageReasoningDetail struct {
 	Type      ChatCompletionMessageReasoningDetailType   `json:"type"`
-	Text      string                                     `json:"text"`
-	Summary   string                                     `json:"summary"`
-	ID        string                                     `json:"id"`
-	Data      string                                     `json:"data"`
-	Signature string                                     `json:"signature"`
+	Text      string                                     `json:"text,omitempty"`
+	Summary   string                                     `json:"summary,omitempty"`
+	ID        string                                     `json:"id,omitempty"`
+	Data      string                                     `json:"data,omitempty"`
+	Signature string                                     `json:"signature,omitempty"`
 	Format    ChatCompletionMessageReasoningDetailFormat `json:"format"`
 	Index     int                                        `json:"index"`
 }
@@ -380,6 +380,7 @@ type ChatCompletionMessageReasoningDetailFormat string
 const (
 	ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1 ChatCompletionMessageReasoningDetailFormat = "anthropic-claude-v1"
 	ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1 ChatCompletionMessageReasoningDetailFormat = "openai-responses-v1"
+	ChatCompletionMessageReasoningDetailFormatGoogleGeminiV1    ChatCompletionMessageReasoningDetailFormat = "google-gemini-v1"
 )
 
 type ChatCompletionMessageToolCallFunction struct {
@@ -820,6 +821,7 @@ func (builder *ChatCompletionMessageBuilder) Add(delta *ChatCompletionChunkChoic
 
 type ChatCompletionMessageToolCallBuilder struct {
 	ID       string
+	Index    *int
 	Type     ChatCompletionMessageToolCallType
 	Function *ChatCompletionMessageToolCallFunctionBuilder
 }
@@ -834,6 +836,7 @@ func (builder *ChatCompletionMessageToolCallBuilder) Build() *ChatCompletionTool
 	}
 	c := &ChatCompletionToolCall{
 		ID:       builder.ID,
+		Index:    *builder.Index,
 		Type:     builder.Type,
 		Function: fn,
 	}
@@ -846,6 +849,9 @@ func (builder *ChatCompletionMessageToolCallBuilder) Add(toolCall *ChatCompletio
 	}
 	if builder.ID == "" {
 		builder.ID = toolCall.ID
+	}
+	if builder.Index == nil {
+		builder.Index = lo.ToPtr(toolCall.Index)
 	}
 	if builder.Type == "" {
 		builder.Type = toolCall.Type
@@ -882,6 +888,9 @@ func (builder *ChatCompletionMessageToolCallFunctionBuilder) Add(function *ChatC
 type ChatCompletionMessageReasoningDetailBuilder struct {
 	Type      ChatCompletionMessageReasoningDetailType   `json:"type"`
 	Text      []byte                                     `json:"text"`
+	Summary   []byte                                     `json:"summary"`
+	ID        string                                     `json:"id"`
+	Data      string                                     `json:"data"`
 	Signature string                                     `json:"signature"`
 	Format    ChatCompletionMessageReasoningDetailFormat `json:"format"`
 	Index     int                                        `json:"index"`
@@ -891,6 +900,9 @@ func (builder *ChatCompletionMessageReasoningDetailBuilder) Build() *ChatComplet
 	c := &ChatCompletionMessageReasoningDetail{
 		Type:      builder.Type,
 		Text:      string(builder.Text),
+		Summary:   string(builder.Summary),
+		ID:        builder.ID,
+		Data:      builder.Data,
 		Signature: builder.Signature,
 		Format:    builder.Format,
 		Index:     builder.Index,
@@ -906,6 +918,13 @@ func (builder *ChatCompletionMessageReasoningDetailBuilder) Add(reasoningDetail 
 		builder.Type = reasoningDetail.Type
 	}
 	builder.Text = append(builder.Text, reasoningDetail.Text...)
+	builder.Summary = append(builder.Summary, reasoningDetail.Summary...)
+	if builder.ID == "" {
+		builder.ID = reasoningDetail.ID
+	}
+	if builder.Data == "" {
+		builder.Data = reasoningDetail.Data
+	}
 	if builder.Signature == "" {
 		builder.Signature = reasoningDetail.Signature
 	}

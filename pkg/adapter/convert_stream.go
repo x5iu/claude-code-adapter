@@ -58,6 +58,7 @@ func ConvertOpenRouterStreamToAnthropicStream(
 			startOnce  sync.Once
 			blockIndex int
 			deltaType  anthropic.MessageContentDeltaType
+			toolCallID string
 			stopReason anthropic.StopReason
 			usage      *anthropic.Usage
 		)
@@ -99,7 +100,10 @@ func ConvertOpenRouterStreamToAnthropicStream(
 			if choices := chunk.Choices; len(choices) > 0 {
 				choice := choices[0]
 				if finishReason := choice.FinishReason; finishReason != "" {
-					stopReason = ConvertOpenRouterFinishReasonToAnthropicStopReason(finishReason, choice.NativeFinishReason)
+					// google-gemini-v1 will give finish_reason multiple times, so we should ensure stopReason is only set once.
+					if stopReason == "" {
+						stopReason = ConvertOpenRouterFinishReasonToAnthropicStopReason(finishReason, choice.NativeFinishReason)
+					}
 				}
 				if delta := choice.Delta; delta != nil {
 					if reasoningDetails := delta.ReasoningDetails; len(reasoningDetails) > 0 {
@@ -234,7 +238,7 @@ func ConvertOpenRouterStreamToAnthropicStream(
 					}
 					if toolCalls := delta.ToolCalls; len(toolCalls) > 0 {
 						if toolCall := toolCalls[0]; toolCall.Function != nil {
-							if deltaType != anthropic.MessageContentDeltaTypeInputJSONDelta {
+							if deltaType != anthropic.MessageContentDeltaTypeInputJSONDelta || toolCall.ID != toolCallID {
 								if deltaType != "" {
 									blockStop := &anthropic.EventContentBlockStop{
 										Type:  anthropic.EventTypeContentBlockStop,
@@ -246,6 +250,7 @@ func ConvertOpenRouterStreamToAnthropicStream(
 									blockIndex++
 								}
 								deltaType = anthropic.MessageContentDeltaTypeInputJSONDelta
+								toolCallID = toolCall.ID
 								blockStart := &anthropic.EventContentBlockStart{
 									Type:  anthropic.EventTypeContentBlockStart,
 									Index: blockIndex,

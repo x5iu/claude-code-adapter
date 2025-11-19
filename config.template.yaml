@@ -22,7 +22,8 @@ options:
   strict: false
   reasoning:
     # Default reasoning detail format when not overridden per-model.
-    # "anthropic-claude-v1" for Anthropic-style reasoning; "openai-responses-v1" for OpenAI Responses v1.
+    # "anthropic-claude-v1" for Anthropic-style reasoning; "openai-responses-v1" for OpenAI Responses v1;
+    # "google-gemini-v1" for Google Gemini reasoning (reasoning is mandatory and always enabled).
     format: "anthropic-claude-v1"
     # Default effort for OpenAI Responses v1 reasoning (if not specified via model suffix).
     # One of: "", "minimal", "low", "medium", "high".
@@ -65,6 +66,7 @@ openrouter:
   model_reasoning_format:
     anthropic/claude-sonnet-4: "anthropic-claude-v1"
     openai/gpt-5: "openai-responses-v1"
+    google/gemini-3-flash-thinking: "google-gemini-v1"
   # Provider preference for OpenRouter routing.
   # Acts as both allowed list and priority order; the adapter sets both Order and Only to this list and allows fallbacks.
   allowed_providers:

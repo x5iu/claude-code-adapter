@@ -151,6 +151,13 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 				dst.Reasoning.Effort = effort
 			}
 		}
+	case openrouter.ChatCompletionMessageReasoningDetailFormatGoogleGeminiV1:
+		// Google: Reasoning is mandatory for this endpoint and cannot be disabled.
+		if dst.Reasoning == nil {
+			dst.Reasoning = &openrouter.ChatCompletionReasoning{Enabled: true}
+		} else {
+			dst.Reasoning.Enabled = true
+		}
 	}
 	dstMessages := make([]*openrouterChatCompletionMessageWrapper, 0, len(src.Messages))
 	if len(src.System) > 0 {
@@ -407,10 +414,11 @@ func canonicalOpenRouterMessages(
 					reasoningDetail.Index = index
 				}
 				switch format := getOpenRouterModelReasoningFormat(model); format {
-				case openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1:
+				case openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1,
+					openrouter.ChatCompletionMessageReasoningDetailFormatGoogleGeminiV1:
 					revisedReasoningDetails := make([]*openrouter.ChatCompletionMessageReasoningDetail, 0, len(message.ReasoningDetails))
 					for _, reasoningDetail := range message.ReasoningDetails {
-						reasoningDetail.Format = openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1
+						reasoningDetail.Format = format
 						if reasoningDetail.Text != "" {
 							reasoningDetail.Type = openrouter.ChatCompletionMessageReasoningDetailTypeSummary
 						}
@@ -420,7 +428,7 @@ func canonicalOpenRouterMessages(
 						if signature != "" {
 							derivedReasoningDetail := &openrouter.ChatCompletionMessageReasoningDetail{
 								Type:   openrouter.ChatCompletionMessageReasoningDetailTypeEncrypted,
-								Format: openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1,
+								Format: format,
 								Index:  reasoningDetail.Index,
 							}
 							if delimiterIndex := strings.Index(signature, viper.GetString(delimiter.ViperKey("options", "reasoning", "delimiter"))); delimiterIndex != -1 {

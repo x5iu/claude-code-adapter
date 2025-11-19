@@ -1971,3 +1971,262 @@ func TestForceThinking_MaxTokensBoundaries(t *testing.T) {
 		t.Errorf("Original MaxTokens should remain 100000, got %v", lo.FromPtr(gotLarge.MaxTokens))
 	}
 }
+
+func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_GoogleGeminiV1(t *testing.T) {
+	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
+	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatGoogleGeminiV1))
+	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
+
+	src := &anthropic.GenerateMessageRequest{
+		Model:     "google/gemini-3-flash-thinking",
+		MaxTokens: 500,
+		Thinking: &anthropic.Thinking{
+			Type:         anthropic.ThinkingTypeEnabled,
+			BudgetTokens: 123,
+		},
+		Messages: []*anthropic.Message{},
+	}
+
+	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	if got.Reasoning == nil {
+		t.Fatalf("Reasoning is nil")
+	}
+	// Google Gemini format forces Enabled to true
+	if !got.Reasoning.Enabled {
+		t.Errorf("Reasoning.Enabled should be forced to true for Google Gemini, got false")
+	}
+	// MaxTokens should be preserved from the thinking budget
+	if got.Reasoning.MaxTokens != 123 {
+		t.Errorf("MaxTokens should remain 123, got %d", got.Reasoning.MaxTokens)
+	}
+	// Effort should be empty for Google Gemini format
+	if got.Reasoning.Effort != "" {
+		t.Errorf("Effort should be empty for Google Gemini, got %q", got.Reasoning.Effort)
+	}
+}
+
+func TestConvertAnthropicRequestToOpenRouterRequest_GoogleGeminiV1_ForceEnabled(t *testing.T) {
+	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
+	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatGoogleGeminiV1))
+	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
+
+	tests := []struct {
+		name      string
+		src       *anthropic.GenerateMessageRequest
+		wantCheck func(*testing.T, *openrouter.CreateChatCompletionRequest)
+	}{
+		{
+			name: "nil reasoning is created with enabled=true",
+			src: &anthropic.GenerateMessageRequest{
+				Model:     "google/gemini-3-flash-thinking",
+				MaxTokens: 500,
+				Messages:  []*anthropic.Message{},
+			},
+			wantCheck: func(t *testing.T, got *openrouter.CreateChatCompletionRequest) {
+				if got.Reasoning == nil {
+					t.Fatalf("Reasoning should be created, got nil")
+				}
+				if !got.Reasoning.Enabled {
+					t.Errorf("Reasoning.Enabled should be forced to true, got false")
+				}
+			},
+		},
+		{
+			name: "disabled reasoning is forced to enabled",
+			src: &anthropic.GenerateMessageRequest{
+				Model:     "google/gemini-3-flash-thinking",
+				MaxTokens: 500,
+				Thinking: &anthropic.Thinking{
+					Type:         anthropic.ThinkingTypeDisabled,
+					BudgetTokens: 100,
+				},
+				Messages: []*anthropic.Message{},
+			},
+			wantCheck: func(t *testing.T, got *openrouter.CreateChatCompletionRequest) {
+				if got.Reasoning == nil {
+					t.Fatalf("Reasoning should exist, got nil")
+				}
+				if !got.Reasoning.Enabled {
+					t.Errorf("Reasoning.Enabled should be forced to true even when source is disabled, got false")
+				}
+				if got.Reasoning.MaxTokens != 100 {
+					t.Errorf("MaxTokens should still be set from source, got %d", got.Reasoning.MaxTokens)
+				}
+			},
+		},
+		{
+			name: "enabled reasoning remains enabled",
+			src: &anthropic.GenerateMessageRequest{
+				Model:     "google/gemini-3-flash-thinking",
+				MaxTokens: 500,
+				Thinking: &anthropic.Thinking{
+					Type:         anthropic.ThinkingTypeEnabled,
+					BudgetTokens: 200,
+				},
+				Messages: []*anthropic.Message{},
+			},
+			wantCheck: func(t *testing.T, got *openrouter.CreateChatCompletionRequest) {
+				if got.Reasoning == nil {
+					t.Fatalf("Reasoning should exist, got nil")
+				}
+				if !got.Reasoning.Enabled {
+					t.Errorf("Reasoning.Enabled should be true, got false")
+				}
+				if got.Reasoning.MaxTokens != 200 {
+					t.Errorf("MaxTokens should be 200, got %d", got.Reasoning.MaxTokens)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ConvertAnthropicRequestToOpenRouterRequest(tt.src)
+			tt.wantCheck(t, got)
+		})
+	}
+}
+
+func TestCanonicalOpenRouterMessages_GoogleGeminiV1Format(t *testing.T) {
+	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
+	prevDelimiter := viper.GetString(delimiter.ViperKey("options", "reasoning", "delimiter"))
+	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatGoogleGeminiV1))
+	viper.Set(delimiter.ViperKey("options", "reasoning", "delimiter"), "/")
+	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
+	defer viper.Set(delimiter.ViperKey("options", "reasoning", "delimiter"), prevDelimiter)
+
+	// Create a single anthropic message instance to be shared
+	sharedMsg := &anthropic.Message{Role: anthropic.MessageRoleAssistant}
+
+	src := []*openrouterChatCompletionMessageWrapper{
+		{
+			ChatCompletionMessage: &openrouter.ChatCompletionMessage{
+				Role: openrouter.ChatCompletionMessageRoleAssistant,
+				Content: &openrouter.ChatCompletionMessageContent{
+					Type: openrouter.ChatCompletionMessageContentTypeText,
+					Text: "Let me think about this",
+				},
+				ReasoningDetails: []*openrouter.ChatCompletionMessageReasoningDetail{
+					{
+						Type:      openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText,
+						Text:      "First thought",
+						Signature: "sig123/data456",
+					},
+				},
+			},
+			underlyingAnthropicMessage: sharedMsg,
+		},
+		{
+			ChatCompletionMessage: &openrouter.ChatCompletionMessage{
+				Role: openrouter.ChatCompletionMessageRoleAssistant,
+				Content: &openrouter.ChatCompletionMessageContent{
+					Type: openrouter.ChatCompletionMessageContentTypeText,
+					Text: "And here's my answer",
+				},
+				ReasoningDetails: []*openrouter.ChatCompletionMessageReasoningDetail{
+					{
+						Type:      openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText,
+						Text:      "Second thought",
+						Signature: "sig789/data012",
+					},
+				},
+			},
+			underlyingAnthropicMessage: sharedMsg, // Same message reference
+		},
+	}
+
+	messages := canonicalOpenRouterMessages("google/gemini-3-flash-thinking", src)
+	if len(messages) != 1 {
+		t.Fatalf("Expected 1 merged message, got %d", len(messages))
+	}
+
+	msg := messages[0]
+	if msg.Role != openrouter.ChatCompletionMessageRoleAssistant {
+		t.Errorf("Expected role assistant, got %s", msg.Role)
+	}
+
+	// Check that content is merged into Parts (two text contents -> Parts type)
+	if msg.Content.Type != openrouter.ChatCompletionMessageContentTypeParts {
+		t.Errorf("Expected content type parts, got %s", msg.Content.Type)
+	}
+	if len(msg.Content.Parts) != 2 {
+		t.Fatalf("Expected 2 content parts, got %d", len(msg.Content.Parts))
+	}
+	if msg.Content.Parts[0].Text != "Let me think about this" {
+		t.Errorf("Expected first part text 'Let me think about this', got %q", msg.Content.Parts[0].Text)
+	}
+	if msg.Content.Parts[1].Text != "And here's my answer" {
+		t.Errorf("Expected second part text 'And here's my answer', got %q", msg.Content.Parts[1].Text)
+	}
+
+	// Check that reasoning details are properly formatted with google-gemini-v1
+	if len(msg.ReasoningDetails) != 4 {
+		t.Fatalf("Expected 4 reasoning details (2 summaries + 2 encrypted), got %d", len(msg.ReasoningDetails))
+	}
+
+	// First reasoning detail should be summary type with google-gemini-v1 format
+	if msg.ReasoningDetails[0].Type != openrouter.ChatCompletionMessageReasoningDetailTypeSummary {
+		t.Errorf("Expected first reasoning detail to be summary type, got %s", msg.ReasoningDetails[0].Type)
+	}
+	if msg.ReasoningDetails[0].Format != openrouter.ChatCompletionMessageReasoningDetailFormatGoogleGeminiV1 {
+		t.Errorf("Expected format google-gemini-v1, got %s", msg.ReasoningDetails[0].Format)
+	}
+	if msg.ReasoningDetails[0].Text != "First thought" {
+		t.Errorf("Expected text 'First thought', got %q", msg.ReasoningDetails[0].Text)
+	}
+
+	// Second reasoning detail should be encrypted type with signature split
+	if msg.ReasoningDetails[1].Type != openrouter.ChatCompletionMessageReasoningDetailTypeEncrypted {
+		t.Errorf("Expected second reasoning detail to be encrypted type, got %s", msg.ReasoningDetails[1].Type)
+	}
+	if msg.ReasoningDetails[1].Format != openrouter.ChatCompletionMessageReasoningDetailFormatGoogleGeminiV1 {
+		t.Errorf("Expected format google-gemini-v1, got %s", msg.ReasoningDetails[1].Format)
+	}
+	if msg.ReasoningDetails[1].ID != "sig123" {
+		t.Errorf("Expected ID 'sig123', got %q", msg.ReasoningDetails[1].ID)
+	}
+	if msg.ReasoningDetails[1].Data != "data456" {
+		t.Errorf("Expected Data 'data456', got %q", msg.ReasoningDetails[1].Data)
+	}
+
+	// Third reasoning detail should be summary for second thought
+	if msg.ReasoningDetails[2].Type != openrouter.ChatCompletionMessageReasoningDetailTypeSummary {
+		t.Errorf("Expected third reasoning detail to be summary type, got %s", msg.ReasoningDetails[2].Type)
+	}
+	if msg.ReasoningDetails[2].Format != openrouter.ChatCompletionMessageReasoningDetailFormatGoogleGeminiV1 {
+		t.Errorf("Expected format google-gemini-v1, got %s", msg.ReasoningDetails[2].Format)
+	}
+	if msg.ReasoningDetails[2].Text != "Second thought" {
+		t.Errorf("Expected text 'Second thought', got %q", msg.ReasoningDetails[2].Text)
+	}
+
+	// Fourth reasoning detail should be encrypted for second signature
+	if msg.ReasoningDetails[3].Type != openrouter.ChatCompletionMessageReasoningDetailTypeEncrypted {
+		t.Errorf("Expected fourth reasoning detail to be encrypted type, got %s", msg.ReasoningDetails[3].Type)
+	}
+	if msg.ReasoningDetails[3].Format != openrouter.ChatCompletionMessageReasoningDetailFormatGoogleGeminiV1 {
+		t.Errorf("Expected format google-gemini-v1, got %s", msg.ReasoningDetails[3].Format)
+	}
+	if msg.ReasoningDetails[3].ID != "sig789" {
+		t.Errorf("Expected ID 'sig789', got %q", msg.ReasoningDetails[3].ID)
+	}
+	if msg.ReasoningDetails[3].Data != "data012" {
+		t.Errorf("Expected Data 'data012', got %q", msg.ReasoningDetails[3].Data)
+	}
+
+	// Check indices are set correctly
+	// Each original reasoning detail produces two entries (summary + encrypted) with the same index
+	// First pair: index 0, Second pair: index 1
+	if msg.ReasoningDetails[0].Index != 0 {
+		t.Errorf("Expected first reasoning detail to have index 0, got %d", msg.ReasoningDetails[0].Index)
+	}
+	if msg.ReasoningDetails[1].Index != 0 {
+		t.Errorf("Expected second reasoning detail to have index 0 (same as summary), got %d", msg.ReasoningDetails[1].Index)
+	}
+	if msg.ReasoningDetails[2].Index != 1 {
+		t.Errorf("Expected third reasoning detail to have index 1, got %d", msg.ReasoningDetails[2].Index)
+	}
+	if msg.ReasoningDetails[3].Index != 1 {
+		t.Errorf("Expected fourth reasoning detail to have index 1 (same as summary), got %d", msg.ReasoningDetails[3].Index)
+	}
+}
