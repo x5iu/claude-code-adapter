@@ -44,6 +44,9 @@ go run ./cmd/claude-code-adapter-cli serve
 # Start with custom port
 ./claude-code-adapter serve -p 8080
 
+# Start with custom host
+./claude-code-adapter serve --host 0.0.0.0
+
 # Start with OpenRouter provider
 ./claude-code-adapter serve --provider openrouter
 
@@ -74,7 +77,7 @@ go run ./cmd/claude-code-adapter-cli serve
 ./claude-code-adapter serve --help
 ```
 
-The server will listen on `127.0.0.1:2194` and accept Anthropic Messages API requests at `/v1/messages`.
+The server will listen on the configured address (default `127.0.0.1:2194`) and accept Anthropic Messages API requests at `/v1/messages`.
 
 ### Snapshots
 
@@ -107,6 +110,7 @@ Create a `config.yaml` file (see `config.template.yaml`):
 provider: "openrouter"  # Default provider: openrouter or anthropic
 
 http:
+  host: "127.0.0.1"     # Server host
   port: 2194            # Server port
 
 options:
@@ -163,7 +167,7 @@ export ANTHROPIC_VERSION="2023-06-01"
 
 The adapter server operates as an HTTP proxy:
 
-1. **Listens** on `127.0.0.1:2194` at endpoint `/v1/messages`
+1. **Listens** on configured host/port (default `127.0.0.1:2194`) at endpoint `/v1/messages`
 2. **Accepts** Anthropic Messages API requests from clients  
 3. **Routes** requests based on provider configuration and server tools
 4. **Converts** between API formats when using OpenRouter

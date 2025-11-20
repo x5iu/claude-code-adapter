@@ -76,6 +76,7 @@ func newServeCommand() *cobra.Command {
 	flags.StringVarP(&configFile, "config", "c", "", "config file (default is $HOME/.claude-code-adapter/config.yaml)")
 	flags.Bool("debug", false, "enable debug logging")
 	flags.Uint16P("port", "p", 2194, "port to serve on")
+	flags.String("host", "127.0.0.1", "host to serve on")
 	flags.String("provider", "openrouter", "provider to use")
 	flags.Bool("strict", false, "strict validation")
 	flags.String("format", string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1), "reasoning format")
@@ -88,6 +89,7 @@ func newServeCommand() *cobra.Command {
 	flags.String("snapshot", "", "snapshot recorder config")
 	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("debug"), flags.Lookup("debug")))
 	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("http", "port"), flags.Lookup("port")))
+	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("http", "host"), flags.Lookup("host")))
 	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("provider"), flags.Lookup("provider")))
 	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("options", "strict"), flags.Lookup("strict")))
 	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("options", "reasoning", "format"), flags.Lookup("format")))
@@ -118,7 +120,7 @@ func serve(cmd *cobra.Command, _ []string) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("/v1/messages", onMessages(cmd, provider.NewProvider(), recorder))
 	server := &http.Server{
-		Addr:     fmt.Sprintf("127.0.0.1:%d", viper.GetUint16(delimiter.ViperKey("http", "port"))),
+		Addr:     fmt.Sprintf("%s:%d", viper.GetString(delimiter.ViperKey("http", "host")), viper.GetUint16(delimiter.ViperKey("http", "port"))),
 		Handler:  mux,
 		ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelWarn),
 	}
