@@ -2164,9 +2164,9 @@ func TestCanonicalOpenRouterMessages_GoogleGeminiV1Format(t *testing.T) {
 		t.Fatalf("Expected 4 reasoning details (2 summaries + 2 encrypted), got %d", len(msg.ReasoningDetails))
 	}
 
-	// First reasoning detail should be summary type with google-gemini-v1 format
-	if msg.ReasoningDetails[0].Type != openrouter.ChatCompletionMessageReasoningDetailTypeSummary {
-		t.Errorf("Expected first reasoning detail to be summary type, got %s", msg.ReasoningDetails[0].Type)
+	// First reasoning detail should be reasoning.text type with google-gemini-v1 format
+	if msg.ReasoningDetails[0].Type != openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText {
+		t.Errorf("Expected first reasoning detail to be reasoning.text type, got %s", msg.ReasoningDetails[0].Type)
 	}
 	if msg.ReasoningDetails[0].Format != openrouter.ChatCompletionMessageReasoningDetailFormatGoogleGeminiV1 {
 		t.Errorf("Expected format google-gemini-v1, got %s", msg.ReasoningDetails[0].Format)
@@ -2189,9 +2189,9 @@ func TestCanonicalOpenRouterMessages_GoogleGeminiV1Format(t *testing.T) {
 		t.Errorf("Expected Data 'data456', got %q", msg.ReasoningDetails[1].Data)
 	}
 
-	// Third reasoning detail should be summary for second thought
-	if msg.ReasoningDetails[2].Type != openrouter.ChatCompletionMessageReasoningDetailTypeSummary {
-		t.Errorf("Expected third reasoning detail to be summary type, got %s", msg.ReasoningDetails[2].Type)
+	// Third reasoning detail should be reasoning.text for second thought
+	if msg.ReasoningDetails[2].Type != openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText {
+		t.Errorf("Expected third reasoning detail to be reasoning.text type, got %s", msg.ReasoningDetails[2].Type)
 	}
 	if msg.ReasoningDetails[2].Format != openrouter.ChatCompletionMessageReasoningDetailFormatGoogleGeminiV1 {
 		t.Errorf("Expected format google-gemini-v1, got %s", msg.ReasoningDetails[2].Format)
