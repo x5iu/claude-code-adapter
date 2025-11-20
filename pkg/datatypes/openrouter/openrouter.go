@@ -836,7 +836,7 @@ func (builder *ChatCompletionMessageToolCallBuilder) Build() *ChatCompletionTool
 	}
 	c := &ChatCompletionToolCall{
 		ID:       builder.ID,
-		Index:    *builder.Index,
+		Index:    lo.FromPtr(builder.Index),
 		Type:     builder.Type,
 		Function: fn,
 	}
