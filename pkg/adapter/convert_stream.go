@@ -238,7 +238,7 @@ func ConvertOpenRouterStreamToAnthropicStream(
 					}
 					if toolCalls := delta.ToolCalls; len(toolCalls) > 0 {
 						if toolCall := toolCalls[0]; toolCall.Function != nil {
-							if deltaType != anthropic.MessageContentDeltaTypeInputJSONDelta || toolCall.ID != toolCallID {
+							if deltaType != anthropic.MessageContentDeltaTypeInputJSONDelta || (toolCall.ID != "" && toolCall.ID != toolCallID) {
 								if deltaType != "" {
 									blockStop := &anthropic.EventContentBlockStop{
 										Type:  anthropic.EventTypeContentBlockStop,
