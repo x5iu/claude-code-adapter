@@ -370,26 +370,30 @@ func canonicalOpenRouterMessages(
 						currentChatCompletionMessage.ToolCalls = append(currentChatCompletionMessage.ToolCalls, wrapper.ToolCalls...)
 					}
 				}
-				if currentChatCompletionMessage.Content != nil && wrapper.Content != nil {
-					if currentChatCompletionMessage.Content.IsText() {
-						currentChatCompletionMessage.Content = &openrouter.ChatCompletionMessageContent{
-							Type: openrouter.ChatCompletionMessageContentTypeParts,
-							Parts: []*openrouter.ChatCompletionMessageContentPart{
-								{
-									Type: openrouter.ChatCompletionMessageContentPartTypeText,
-									Text: currentChatCompletionMessage.Content.Text,
+				if wrapper.Content != nil {
+					if currentChatCompletionMessage.Content != nil {
+						if currentChatCompletionMessage.Content.IsText() {
+							currentChatCompletionMessage.Content = &openrouter.ChatCompletionMessageContent{
+								Type: openrouter.ChatCompletionMessageContentTypeParts,
+								Parts: []*openrouter.ChatCompletionMessageContentPart{
+									{
+										Type: openrouter.ChatCompletionMessageContentPartTypeText,
+										Text: currentChatCompletionMessage.Content.Text,
+									},
 								},
-							},
+							}
 						}
-					}
-					switch wrapper.Content.Type {
-					case openrouter.ChatCompletionMessageContentTypeText:
-						currentChatCompletionMessage.Content.Parts = append(currentChatCompletionMessage.Content.Parts, &openrouter.ChatCompletionMessageContentPart{
-							Type: openrouter.ChatCompletionMessageContentPartTypeText,
-							Text: wrapper.Content.Text,
-						})
-					case openrouter.ChatCompletionMessageContentTypeParts:
-						currentChatCompletionMessage.Content.Parts = append(currentChatCompletionMessage.Content.Parts, wrapper.Content.Parts...)
+						switch wrapper.Content.Type {
+						case openrouter.ChatCompletionMessageContentTypeText:
+							currentChatCompletionMessage.Content.Parts = append(currentChatCompletionMessage.Content.Parts, &openrouter.ChatCompletionMessageContentPart{
+								Type: openrouter.ChatCompletionMessageContentPartTypeText,
+								Text: wrapper.Content.Text,
+							})
+						case openrouter.ChatCompletionMessageContentTypeParts:
+							currentChatCompletionMessage.Content.Parts = append(currentChatCompletionMessage.Content.Parts, wrapper.Content.Parts...)
+						}
+					} else {
+						currentChatCompletionMessage.Content = wrapper.Content
 					}
 				}
 			}
@@ -419,12 +423,21 @@ func canonicalOpenRouterMessages(
 					revisedReasoningDetails := make([]*openrouter.ChatCompletionMessageReasoningDetail, 0, len(message.ReasoningDetails))
 					for _, reasoningDetail := range message.ReasoningDetails {
 						reasoningDetail.Format = format
-						if reasoningDetail.Text != "" {
+						if reasoningDetail.Summary != "" {
 							reasoningDetail.Type = openrouter.ChatCompletionMessageReasoningDetailTypeSummary
+							revisedReasoningDetails = append(revisedReasoningDetails, reasoningDetail)
+						} else if reasoningDetail.Text != "" {
+							reasoningDetail.Type = openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText
+							revisedReasoningDetails = append(revisedReasoningDetails, reasoningDetail)
+						} else {
+							// For google-gemini-v1, reasoning.encrypted part always occurs in a single block, so we need to adjust
+							// the index of encrypted part to match the previous reasoning.text part.
+							if reasoningDetail.Index > 0 {
+								reasoningDetail.Index--
+							}
 						}
 						signature := reasoningDetail.Signature
 						reasoningDetail.Signature = ""
-						revisedReasoningDetails = append(revisedReasoningDetails, reasoningDetail)
 						if signature != "" {
 							derivedReasoningDetail := &openrouter.ChatCompletionMessageReasoningDetail{
 								Type:   openrouter.ChatCompletionMessageReasoningDetailTypeEncrypted,
