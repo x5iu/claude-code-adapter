@@ -106,7 +106,10 @@ func ConvertOpenRouterStreamToAnthropicStream(
 					}
 				}
 				if delta := choice.Delta; delta != nil {
-					if reasoningDetails := delta.ReasoningDetails; len(reasoningDetails) > 0 {
+					if reasoningDetails := delta.ReasoningDetails; reasoningDetailsContainsReasoningTypes(reasoningDetails,
+						openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText,
+						openrouter.ChatCompletionMessageReasoningDetailTypeSummary,
+					) {
 						if deltaType != anthropic.MessageContentDeltaTypeThinkingDelta {
 							if deltaType != "" {
 								blockStop := &anthropic.EventContentBlockStop{
@@ -264,7 +267,9 @@ func ConvertOpenRouterStreamToAnthropicStream(
 							}
 						}
 					}
-					if reasoningDetails := delta.ReasoningDetails; len(reasoningDetails) > 0 {
+					if reasoningDetails := delta.ReasoningDetails; reasoningDetailsContainsReasoningTypes(reasoningDetails,
+						openrouter.ChatCompletionMessageReasoningDetailTypeEncrypted,
+					) {
 						if deltaType != anthropic.MessageContentDeltaTypeThinkingDelta {
 							if deltaType != "" {
 								blockStop := &anthropic.EventContentBlockStop{
@@ -365,4 +370,16 @@ func ConvertOpenRouterFinishReasonToAnthropicStopReason(
 		}
 	}
 	return stopReason
+}
+
+func reasoningDetailsContainsReasoningTypes(
+	details []*openrouter.ChatCompletionMessageReasoningDetail,
+	reasoningTypes ...openrouter.ChatCompletionMessageReasoningDetailType,
+) bool {
+	for _, detail := range details {
+		if lo.Contains(reasoningTypes, detail.Type) {
+			return true
+		}
+	}
+	return false
 }
