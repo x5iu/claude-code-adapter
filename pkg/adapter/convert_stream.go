@@ -177,26 +177,6 @@ func ConvertOpenRouterStreamToAnthropicStream(
 										return
 									}
 								}
-							case openrouter.ChatCompletionMessageReasoningDetailTypeEncrypted:
-								if reasoningDetailData := reasoningDetail.Data; reasoningDetailData != "" {
-									var signature string
-									if reasoningDetailID := reasoningDetail.ID; reasoningDetailID != "" {
-										signature = reasoningDetailID + viper.GetString(delimiter.ViperKey("options", "reasoning", "delimiter")) + reasoningDetailData
-									} else {
-										signature = reasoningDetailData
-									}
-									blockDelta := &anthropic.EventContentBlockDelta{
-										Type:  anthropic.EventTypeContentBlockDelta,
-										Index: blockIndex,
-										Delta: &anthropic.MessageContentDelta{
-											Type:      anthropic.MessageContentDeltaTypeSignatureDelta,
-											Signature: signature,
-										},
-									}
-									if !yield(blockDelta, nil) {
-										return
-									}
-								}
 							}
 						}
 					}
@@ -280,6 +260,55 @@ func ConvertOpenRouterStreamToAnthropicStream(
 								}
 								if !yield(blockDelta, nil) {
 									return
+								}
+							}
+						}
+					}
+					if reasoningDetails := delta.ReasoningDetails; len(reasoningDetails) > 0 {
+						if deltaType != anthropic.MessageContentDeltaTypeThinkingDelta {
+							if deltaType != "" {
+								blockStop := &anthropic.EventContentBlockStop{
+									Type:  anthropic.EventTypeContentBlockStop,
+									Index: blockIndex,
+								}
+								if !yield(blockStop, nil) {
+									return
+								}
+								blockIndex++
+							}
+							deltaType = anthropic.MessageContentDeltaTypeThinkingDelta
+							blockStart := &anthropic.EventContentBlockStart{
+								Type:  anthropic.EventTypeContentBlockStart,
+								Index: blockIndex,
+								ContentBlock: &anthropic.MessageContent{
+									Type: anthropic.MessageContentTypeThinking,
+								},
+							}
+							if !yield(blockStart, nil) {
+								return
+							}
+						}
+						for _, reasoningDetail := range reasoningDetails {
+							switch reasoningDetail.Type {
+							case openrouter.ChatCompletionMessageReasoningDetailTypeEncrypted:
+								if reasoningDetailData := reasoningDetail.Data; reasoningDetailData != "" {
+									var signature string
+									if reasoningDetailID := reasoningDetail.ID; reasoningDetailID != "" {
+										signature = reasoningDetailID + viper.GetString(delimiter.ViperKey("options", "reasoning", "delimiter")) + reasoningDetailData
+									} else {
+										signature = reasoningDetailData
+									}
+									blockDelta := &anthropic.EventContentBlockDelta{
+										Type:  anthropic.EventTypeContentBlockDelta,
+										Index: blockIndex,
+										Delta: &anthropic.MessageContentDelta{
+											Type:      anthropic.MessageContentDeltaTypeSignatureDelta,
+											Signature: signature,
+										},
+									}
+									if !yield(blockDelta, nil) {
+										return
+									}
 								}
 							}
 						}
