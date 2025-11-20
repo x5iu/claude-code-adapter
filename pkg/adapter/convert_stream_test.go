@@ -284,7 +284,7 @@ func TestConvertOpenRouterStreamToAnthropicStream_ContentTypeTransitions(t *test
 						{
 							Delta: &openrouter.ChatCompletionChunkChoiceDelta{
 								ReasoningDetails: []*openrouter.ChatCompletionMessageReasoningDetail{
-									{Text: "Thinking..."},
+									{Type: openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText, Text: "Thinking..."},
 								},
 							},
 						},
