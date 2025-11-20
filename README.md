@@ -115,6 +115,7 @@ http:
 
 options:
   strict: false
+  prevent_empty_text_tool_result: false # Replace empty tool result text with "(No content)"
   reasoning:
     format: "anthropic-claude-v1"   # or "openai-responses-v1"
     effort: "medium"                # minimal|low|medium|high

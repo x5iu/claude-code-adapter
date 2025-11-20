@@ -487,6 +487,10 @@ func convertAnthropicToolResultMessageContentsToOpenRouterChatCompletionMessageC
 				Type: openrouter.ChatCompletionMessageContentPartTypeText,
 				Text: srcContent.Text,
 			}
+			// No idea why Claude Code send empty text in tool_result, so we replace it with a hint message if necessary.
+			if viper.GetBool(delimiter.ViperKey("options", "prevent_empty_text_tool_result")) && srcContent.Text == "" {
+				dstPart.Text = "(No content)"
+			}
 			if srcCacheControl := srcContent.CacheControl; srcCacheControl != nil {
 				dstPart.CacheControl = &openrouter.ChatCompletionMessageCacheControl{
 					Type: openrouter.ChatCompletionMessageCacheControlType(srcCacheControl.Type),

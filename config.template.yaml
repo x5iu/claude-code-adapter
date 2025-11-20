@@ -22,6 +22,9 @@ options:
   # Enable strict JSON Schema for tools and tighter validations during conversion.
   # For OpenRouter, this sets function.parameters.strict.
   strict: false
+  # Prevent empty text in tool_result by replacing it with "(No content)".
+  # Some providers (like OpenAI) may reject empty content in tool results.
+  prevent_empty_text_tool_result: false
   reasoning:
     # Default reasoning detail format when not overridden per-model.
     # "anthropic-claude-v1" for Anthropic-style reasoning; "openai-responses-v1" for OpenAI Responses v1;
