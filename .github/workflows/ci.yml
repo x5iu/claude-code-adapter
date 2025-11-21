@@ -21,7 +21,7 @@ jobs:
       - name: verify-dependencies
         run: |
           go mod tidy
-          git diff -exit-code go.mod go.sum
+          git diff --exit-code go.mod go.sum
           go mod verify
       - name: static-check
         run: |
