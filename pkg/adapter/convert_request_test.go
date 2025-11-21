@@ -2230,3 +2230,56 @@ func TestCanonicalOpenRouterMessages_GoogleGeminiV1Format(t *testing.T) {
 		t.Errorf("Expected fourth reasoning detail to have index 1 (same as summary), got %d", msg.ReasoningDetails[3].Index)
 	}
 }
+
+func TestCanonicalOpenRouterMessages_OpenAIResponsesV1Format(t *testing.T) {
+	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
+	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
+	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
+
+	// Create a single anthropic message instance to be shared
+	sharedMsg := &anthropic.Message{Role: anthropic.MessageRoleAssistant}
+
+	src := []*openrouterChatCompletionMessageWrapper{
+		{
+			ChatCompletionMessage: &openrouter.ChatCompletionMessage{
+				Role: openrouter.ChatCompletionMessageRoleAssistant,
+				Content: &openrouter.ChatCompletionMessageContent{
+					Type: openrouter.ChatCompletionMessageContentTypeText,
+					Text: "Let me think about this",
+				},
+				ReasoningDetails: []*openrouter.ChatCompletionMessageReasoningDetail{
+					{
+						Type:      openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText,
+						Text:      "First thought",
+					},
+				},
+			},
+			underlyingAnthropicMessage: sharedMsg,
+		},
+	}
+
+	messages := canonicalOpenRouterMessages("gpt-5", src)
+	if len(messages) != 1 {
+		t.Fatalf("Expected 1 merged message, got %d", len(messages))
+	}
+
+	msg := messages[0]
+
+	if len(msg.ReasoningDetails) != 1 {
+		t.Fatalf("Expected 1 reasoning detail, got %d", len(msg.ReasoningDetails))
+	}
+
+	// For openai-responses-v1, text should be moved to summary
+	if msg.ReasoningDetails[0].Type != openrouter.ChatCompletionMessageReasoningDetailTypeSummary {
+		t.Errorf("Expected reasoning detail to be summary type, got %s", msg.ReasoningDetails[0].Type)
+	}
+	if msg.ReasoningDetails[0].Format != openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1 {
+		t.Errorf("Expected format openai-responses-v1, got %s", msg.ReasoningDetails[0].Format)
+	}
+	if msg.ReasoningDetails[0].Summary != "First thought" {
+		t.Errorf("Expected summary 'First thought', got %q", msg.ReasoningDetails[0].Summary)
+	}
+	if msg.ReasoningDetails[0].Text != "" {
+		t.Errorf("Expected text to be empty, got %q", msg.ReasoningDetails[0].Text)
+	}
+}

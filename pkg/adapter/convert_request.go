@@ -423,6 +423,14 @@ func canonicalOpenRouterMessages(
 					revisedReasoningDetails := make([]*openrouter.ChatCompletionMessageReasoningDetail, 0, len(message.ReasoningDetails))
 					for _, reasoningDetail := range message.ReasoningDetails {
 						reasoningDetail.Format = format
+						if reasoningDetail.Text != "" {
+							switch reasoningDetail.Format {
+							case openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1:
+								// For openai-responses-v1, we need to convert the reasoning.text part to a reasoning.summary part.
+								reasoningDetail.Summary = reasoningDetail.Text
+								reasoningDetail.Text = ""
+							}
+						}
 						if reasoningDetail.Summary != "" {
 							reasoningDetail.Type = openrouter.ChatCompletionMessageReasoningDetailTypeSummary
 							revisedReasoningDetails = append(revisedReasoningDetails, reasoningDetail)
