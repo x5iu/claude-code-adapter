@@ -544,3 +544,45 @@ func TestErrorTypeMapping_Extended(t *testing.T) {
 		}
 	}
 }
+
+func TestError_ErrorString(t *testing.T) {
+	// Case 1: Standard error without metadata
+	e1 := &Error{}
+	e1.Inner.Code = 400
+	e1.Inner.Message = "Bad Request"
+	if e1.Error() != "(400) Bad Request" {
+		t.Fatalf("standard error string mismatch: %s", e1.Error())
+	}
+
+	// Case 2: Error with full metadata
+	e2 := &Error{}
+	e2.Inner.Code = 500
+	e2.Inner.Message = "Internal Error"
+	e2.Inner.Metadata.ProviderName = "openai"
+	e2.Inner.Metadata.Raw = json.RawMessage(`{"error":"rate limit"}`)
+
+	expected := "(500) openai: {\"error\":\"rate limit\"}"
+	if e2.Error() != expected {
+		t.Fatalf("metadata error string mismatch: got %q, want %q", e2.Error(), expected)
+	}
+
+	// Case 3: Error with partial metadata (missing raw)
+	e3 := &Error{}
+	e3.Inner.Code = 404
+	e3.Inner.Message = "Not Found"
+	e3.Inner.Metadata.ProviderName = "anthropic"
+	// Raw is nil
+	if e3.Error() != "(404) Not Found" {
+		t.Fatalf("partial metadata (missing raw) mismatch: %s", e3.Error())
+	}
+
+	// Case 4: Error with partial metadata (missing provider name)
+	e4 := &Error{}
+	e4.Inner.Code = 403
+	e4.Inner.Message = "Forbidden"
+	e4.Inner.Metadata.Raw = json.RawMessage(`{}`)
+	// ProviderName is empty
+	if e4.Error() != "(403) Forbidden" {
+		t.Fatalf("partial metadata (missing provider) mismatch: %s", e4.Error())
+	}
+}

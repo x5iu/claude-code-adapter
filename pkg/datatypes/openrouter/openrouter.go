@@ -52,15 +52,28 @@ func WithProviderPreference(pref *ProviderPreference) func(*http.Request) {
 
 type Error struct {
 	Inner struct {
-		Code     int            `json:"code"`
-		Message  string         `json:"message"`
-		Metadata map[string]any `json:"metadata"`
+		Code     int    `json:"code"`
+		Message  string `json:"message"`
+		Metadata struct {
+			/*
+				type ProviderErrorMetadata = {
+				  provider_name: string; // The name of the provider that encountered the error
+				  raw: unknown; // The raw error from the provider
+				};
+			*/
+			ProviderName string          `json:"provider_name"`
+			Raw          json.RawMessage `json:"raw"`
+		} `json:"metadata"`
 	} `json:"error"`
 
 	statusCode int
 }
 
 func (e *Error) Error() string {
+	// If the model provider encounters an error, the error.metadata will contain information about the issue.
+	if e.Inner.Metadata.ProviderName != "" && e.Inner.Metadata.Raw != nil {
+		return fmt.Sprintf("(%d) %s: %s", e.Inner.Code, e.Inner.Metadata.ProviderName, string(e.Inner.Metadata.Raw))
+	}
 	return fmt.Sprintf("(%d) %s", e.Inner.Code, e.Inner.Message)
 }
 
