@@ -2249,8 +2249,8 @@ func TestCanonicalOpenRouterMessages_OpenAIResponsesV1Format(t *testing.T) {
 				},
 				ReasoningDetails: []*openrouter.ChatCompletionMessageReasoningDetail{
 					{
-						Type:      openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText,
-						Text:      "First thought",
+						Type: openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText,
+						Text: "First thought",
 					},
 				},
 			},
