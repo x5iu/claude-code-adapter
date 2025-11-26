@@ -56,11 +56,13 @@ type Config struct {
 }
 
 type OptionsConfig struct {
-	Strict                    bool              `yaml:"strict" json:"strict" mapstructure:"strict"`
-	Reasoning                 *ReasoningConfig  `yaml:"reasoning" json:"reasoning" mapstructure:"reasoning"`
-	Models                    map[string]string `yaml:"models" json:"models" mapstructure:"models"`
-	ContextWindowResizeFactor float64           `yaml:"context_window_resize_factor" json:"context_window_resize_factor" mapstructure:"context_window_resize_factor"`
-	DisableCountTokensRequest bool              `yaml:"disable_count_tokens_request" json:"disable_count_tokens_request" mapstructure:"disable_count_tokens_request"`
+	Strict                     bool              `yaml:"strict" json:"strict" mapstructure:"strict"`
+	PreventEmptyTextToolResult bool              `yaml:"prevent_empty_text_tool_result" json:"prevent_empty_text_tool_result" mapstructure:"prevent_empty_text_tool_result"`
+	Reasoning                  *ReasoningConfig  `yaml:"reasoning" json:"reasoning" mapstructure:"reasoning"`
+	Models                     map[string]string `yaml:"models" json:"models" mapstructure:"models"`
+	ContextWindowResizeFactor  float64           `yaml:"context_window_resize_factor" json:"context_window_resize_factor" mapstructure:"context_window_resize_factor"`
+	DisableCountTokensRequest  bool              `yaml:"disable_count_tokens_request" json:"disable_count_tokens_request" mapstructure:"disable_count_tokens_request"`
+	MinMaxTokens               int               `yaml:"min_max_tokens" json:"min_max_tokens" mapstructure:"min_max_tokens"`
 }
 
 type ReasoningConfig struct {
@@ -70,11 +72,13 @@ type ReasoningConfig struct {
 }
 
 type AnthropicConfig struct {
-	EnablePassThroughMode      bool   `yaml:"enable_pass_through_mode" json:"enable_pass_through_mode" mapstructure:"enable_pass_through_mode"`
-	DisableInterleavedThinking bool   `yaml:"disable_interleaved_thinking" json:"disable_interleaved_thinking" mapstructure:"disable_interleaved_thinking"`
-	ForceThinking              bool   `yaml:"force_thinking" json:"force_thinking" mapstructure:"force_thinking"`
-	BaseURL                    string `yaml:"base_url" json:"base_url" mapstructure:"base_url"`
-	Version                    string `yaml:"version" json:"version" mapstructure:"version"`
+	UseRawRequestBody              bool   `yaml:"use_raw_request_body" json:"use_raw_request_body" mapstructure:"use_raw_request_body"`
+	EnablePassThroughMode          bool   `yaml:"enable_pass_through_mode" json:"enable_pass_through_mode" mapstructure:"enable_pass_through_mode"`
+	DisableInterleavedThinking     bool   `yaml:"disable_interleaved_thinking" json:"disable_interleaved_thinking" mapstructure:"disable_interleaved_thinking"`
+	DisableWebSearchBlockedDomains bool   `yaml:"disable_web_search_blocked_domains" json:"disable_web_search_blocked_domains" mapstructure:"disable_web_search_blocked_domains"`
+	ForceThinking                  bool   `yaml:"force_thinking" json:"force_thinking" mapstructure:"force_thinking"`
+	BaseURL                        string `yaml:"base_url" json:"base_url" mapstructure:"base_url"`
+	Version                        string `yaml:"version" json:"version" mapstructure:"version"`
 }
 
 type OpenRouterConfig struct {
