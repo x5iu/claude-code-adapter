@@ -35,14 +35,23 @@ This is a Go-based Claude Code Adapter that acts as a proxy server, converting b
 ## Architecture
 
 ### Server Operation
-The server (`cmd/claude-code-adapter-cli/serve.go`) operates as an HTTP proxy listening on port 2194 (default). It routes requests based on provider configuration (`openrouter` or `anthropic`) and handles format conversion.
+The server (`cmd/claude-code-adapter-cli/serve.go`) operates as an HTTP proxy listening on port 2194 (default). It routes requests based on profile matching and handles format conversion.
 
 ### Core Components
+- **Profile System** (`pkg/profile`): Model-to-configuration matching using prefix patterns (e.g., `claude-*`). First matching profile wins. See `config.template.yaml` for examples.
 - **Provider Interface** (`pkg/provider`): Defines API interfaces using `defc` annotations. `provider_impl.go` is auto-generated.
 - **Format Adapter** (`pkg/adapter/convert_request.go`): Converts Anthropic requests to OpenRouter format. Handles model mapping, tool calls, and thinking mode.
 - **Stream Adapter** (`pkg/adapter/convert_stream.go`): Converts OpenRouter streaming responses to Anthropic streaming format. Handles event sequencing and content type transitions.
 - **Data Types** (`pkg/datatypes`): Definitions for Anthropic (`pkg/datatypes/anthropic`) and OpenRouter (`pkg/datatypes/openrouter`) APIs.
 - **Snapshot** (`pkg/snapshot`): Records request/response pairs to JSONL for debugging/auditing.
+
+### Profile-Based Configuration
+Profiles are defined as a map in `config.yaml`. Each profile specifies:
+- `models`: List of patterns to match (supports `*` suffix for prefix matching)
+- `provider`: Target provider (`openrouter` or `anthropic`)
+- `options`, `anthropic`, `openrouter`: Provider-specific settings
+
+Profile order in YAML determines matching priority. The `ProfileManager` iterates profiles in definition order and returns the first match.
 
 ### Code Generation
 - Uses `github.com/x5iu/defc` to generate HTTP clients.
