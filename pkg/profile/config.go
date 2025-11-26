@@ -147,6 +147,7 @@ func loadOptionsConfig(v *viper.Viper, key string) *OptionsConfig {
 		Models:                     v.GetStringMapString(delimiter.ViperKey(key, "models")),
 		ContextWindowResizeFactor:  v.GetFloat64(delimiter.ViperKey(key, "context_window_resize_factor")),
 		DisableCountTokensRequest:  v.GetBool(delimiter.ViperKey(key, "disable_count_tokens_request")),
+		MinMaxTokens:               v.GetInt(delimiter.ViperKey(key, "min_max_tokens")),
 	}
 }
 
@@ -267,6 +268,15 @@ func (o *OptionsConfig) GetReasoningDelimiter() string {
 		return "/"
 	}
 	return o.Reasoning.Delimiter
+}
+
+// GetMinMaxTokens safely gets the minimum max_tokens value.
+// Returns 0 if not set (meaning no minimum enforcement).
+func (o *OptionsConfig) GetMinMaxTokens() int {
+	if o == nil {
+		return 0
+	}
+	return o.MinMaxTokens
 }
 
 // GetBaseURL safely gets the Anthropic base URL with a default.
