@@ -578,6 +578,129 @@ func TestMessageBuilder_SignatureDelta(t *testing.T) {
 	}
 }
 
+func TestMessageBuilder_ToolUseWithEmptyInput(t *testing.T) {
+	// Test case for tools without input_schema.properties (like ExitPlanMode)
+	// OpenRouter may output empty string as arguments instead of empty object
+	events := []Event{
+		&EventMessageStart{
+			Message: &Message{
+				ID:    "msg_empty_input",
+				Model: "claude-3-5-sonnet-20241022",
+				Usage: &Usage{InputTokens: 20},
+			},
+		},
+		&EventContentBlockStart{
+			Index: 0,
+			ContentBlock: &MessageContent{
+				Type: MessageContentTypeToolUse,
+				ID:   "toolu_01R3kNPHWa518H2x7rVvNZzQ",
+				Name: "ExitPlanMode",
+			},
+		},
+		// No input_json_delta events - simulates OpenRouter returning empty arguments
+		&EventContentBlockStop{Index: 0},
+		&EventMessageDelta{
+			Delta: &Message{
+				StopReason: lo.ToPtr(StopReasonToolUse),
+			},
+			Usage: &Usage{OutputTokens: 10},
+		},
+	}
+
+	builder := NewMessageBuilder()
+	for _, event := range events {
+		err := builder.Add(event)
+		if err != nil {
+			t.Fatalf("Expected no error adding event, got: %v", err)
+		}
+	}
+	result := builder.Message()
+
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+	if len(result.Content) != 1 {
+		t.Fatalf("Expected 1 content block, got: %d", len(result.Content))
+	}
+
+	content := result.Content[0]
+	if content.Type != MessageContentTypeToolUse {
+		t.Errorf("Expected content type %v, got: %v", MessageContentTypeToolUse, content.Type)
+	}
+	if content.ID != "toolu_01R3kNPHWa518H2x7rVvNZzQ" {
+		t.Errorf("Expected ID 'toolu_01R3kNPHWa518H2x7rVvNZzQ', got: %s", content.ID)
+	}
+	if content.Name != "ExitPlanMode" {
+		t.Errorf("Expected Name 'ExitPlanMode', got: %s", content.Name)
+	}
+	// Empty input should be converted to empty JSON object "{}"
+	expectedInput := []byte(`{}`)
+	if !bytes.Equal(content.Input, expectedInput) {
+		t.Errorf("Expected Input %s, got: %s", expectedInput, content.Input)
+	}
+	if result.StopReason == nil || *result.StopReason != StopReasonToolUse {
+		t.Errorf("Expected StopReason %v, got: %v", StopReasonToolUse, result.StopReason)
+	}
+}
+
+func TestMessageBuilder_ServerToolUseWithEmptyInput(t *testing.T) {
+	// Test case for server tools without input
+	events := []Event{
+		&EventMessageStart{
+			Message: &Message{
+				ID:    "msg_server_empty",
+				Model: "claude-3-5-sonnet-20241022",
+				Usage: &Usage{InputTokens: 15},
+			},
+		},
+		&EventContentBlockStart{
+			Index: 0,
+			ContentBlock: &MessageContent{
+				Type: MessageContentTypeServerToolUse,
+				ID:   "toolu_server_123",
+				Name: "some_server_tool",
+			},
+		},
+		// No input_json_delta events
+		&EventContentBlockStop{Index: 0},
+		&EventMessageDelta{
+			Delta: &Message{
+				StopReason: lo.ToPtr(StopReasonToolUse),
+			},
+			Usage: &Usage{OutputTokens: 8},
+		},
+	}
+
+	builder := NewMessageBuilder()
+	for _, event := range events {
+		err := builder.Add(event)
+		if err != nil {
+			t.Fatalf("Expected no error adding event, got: %v", err)
+		}
+	}
+	result := builder.Message()
+
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+	if len(result.Content) != 1 {
+		t.Fatalf("Expected 1 content block, got: %d", len(result.Content))
+	}
+
+	content := result.Content[0]
+	if content.Type != MessageContentTypeServerToolUse {
+		t.Errorf("Expected content type %v, got: %v", MessageContentTypeServerToolUse, content.Type)
+	}
+	if content.ID != "toolu_server_123" {
+		t.Errorf("Expected ID 'toolu_server_123', got: %s", content.ID)
+	}
+	// Empty input should be converted to empty JSON object "{}"
+	expectedInput := []byte(`{}`)
+	if !bytes.Equal(content.Input, expectedInput) {
+		t.Errorf("Expected Input %s, got: %s", expectedInput, content.Input)
+	}
+}
+
 func TestTool_OmitZero_EmptySlices(t *testing.T) {
 	tool := &Tool{
 		Type:           lo.ToPtr(ToolTypeCustom),

@@ -495,14 +495,40 @@ func (builder *MessageBuilder) Add(event Event) error {
 			content.Text = builder.textBuilder.String()
 			builder.textBuilder.Reset()
 		case MessageContentTypeToolUse, MessageContentTypeServerToolUse:
-			var inputObject map[string]any
-			decoder := json.NewDecoder(&builder.jsonBuilder)
-			decoder.UseNumber()
-			if err := decoder.Decode(&inputObject); err != nil {
-				return fmt.Errorf("invalid tool_use json input: %w", err)
+			if builder.jsonBuilder.Len() == 0 {
+				// For those tools without input_schema.properties (ExitPlanMode)
+				//
+				// "input_schema": {
+				//   "type": "object",
+				//   "properties": {},
+				//   "additionalProperties": true,
+				//   "$schema": "http://json-schema.org/draft-07/schema#"
+				// }
+				//
+				// Anthropic will output an empty object as the input, but OpenRouter may output empty string
+				//
+				// "tool_calls": [
+				//   {
+				//   	"index": 0,
+				//   	"id": "toolu_01R3kNPHWa518H2x7rVvNZzQ",
+				//   	"type": "function",
+				//   	"function": {
+				//   	  "name": "ExitPlanMode",
+				//   	  "arguments": ""
+				//      }
+				//   }
+				// ]
+				content.Input = json.RawMessage("{}")
+			} else {
+				var inputObject map[string]any
+				decoder := json.NewDecoder(&builder.jsonBuilder)
+				decoder.UseNumber()
+				if err := decoder.Decode(&inputObject); err != nil {
+					return fmt.Errorf("invalid tool_use json input: %w", err)
+				}
+				content.Input = json.RawMessage(utils.JSONEncodeString(inputObject))
+				builder.jsonBuilder.Reset()
 			}
-			content.Input = json.RawMessage(utils.JSONEncodeString(inputObject))
-			builder.jsonBuilder.Reset()
 		}
 	}
 	return nil
