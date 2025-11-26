@@ -18,9 +18,10 @@ http:
 # Models are matched using prefix patterns (e.g., "claude-*" matches all Claude models).
 # When a request comes in, the adapter finds the first matching profile for the model.
 # If no profile matches, a 400 error is returned.
+# Note: Profile order matters - first matching profile wins. Define in YAML order.
 profiles:
   # Profile for Claude models using Anthropic provider
-  - name: "anthropic-claude"
+  anthropic-claude:
     # Model patterns to match (supports "*" suffix for prefix matching)
     models:
       - "claude-*"
@@ -84,7 +85,7 @@ profiles:
       allowed_providers: []
 
   # Profile for Claude models using OpenRouter provider (as fallback/alternative)
-  - name: "openrouter-claude"
+  openrouter-claude:
     models:
       - "anthropic/claude-*"
     provider: "openrouter"
@@ -125,7 +126,7 @@ profiles:
         - "amazon-bedrock"
 
   # Profile for OpenAI models (GPT-5, etc.)
-  - name: "openrouter-openai"
+  openrouter-openai:
     models:
       - "openai/*"
       - "gpt-*"
@@ -160,7 +161,7 @@ profiles:
       allowed_providers: []
 
   # Profile for Google Gemini models
-  - name: "openrouter-gemini"
+  openrouter-gemini:
     models:
       - "google/*"
       - "gemini-*"
@@ -196,7 +197,7 @@ profiles:
         - "google-vertex"
 
   # Default catch-all profile (matches any model not matched by previous profiles)
-  - name: "default"
+  default:
     models:
       - "*"
     provider: "openrouter"

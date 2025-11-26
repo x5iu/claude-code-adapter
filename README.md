@@ -10,6 +10,7 @@ A Go-based proxy server that seamlessly converts between Anthropic's Messages AP
 
 - **API Format Conversion**: Seamlessly converts between Anthropic Messages API and OpenRouter Chat Completions API
 - **Multi-Provider Support**: Works with OpenRouter, Anthropic, and other providers
+- **Profile-Based Configuration**: Define different configurations for different models using pattern matching
 - **Streaming Support**: Full support for streaming responses from both APIs
 - **Model Mapping**: Flexible model name mapping for OpenRouter compatibility
 - **Pass-Through Mode**: Direct passthrough for Anthropic API when conversion isn't needed
@@ -107,41 +108,56 @@ The adapter can be configured through:
 Create a `config.yaml` file (see `config.template.yaml`):
 
 ```yaml
-provider: "openrouter"  # Default provider: openrouter or anthropic
-
 http:
   host: "127.0.0.1"     # Server host
   port: 2194            # Server port
 
-options:
-  strict: false
-  prevent_empty_text_tool_result: false # Replace empty tool result text with "(No content)"
-  reasoning:
-    format: "anthropic-claude-v1"   # or "openai-responses-v1"
-    effort: "medium"                # minimal|low|medium|high
-    delimiter: "/"                  # signature delimiter used in stream conversion
-  models:                           # Model name mappings for OpenRouter
-    claude-sonnet-4-20250514: "anthropic/claude-sonnet-4"
-    claude-opus-4-1-20250805: "anthropic/claude-opus-4.1"
-  context_window_resize_factor: 0.6
-  disable_count_tokens_request: false
+# Profiles define configurations for different models
+# Profile order matters - first matching profile wins
+profiles:
+  # Profile for Claude models using Anthropic provider
+  anthropic-claude:
+    models:
+      - "claude-*"      # Matches all claude-* models
+    provider: "anthropic"
+    options:
+      strict: false
+      reasoning:
+        format: "anthropic-claude-v1"
+    anthropic:
+      api_key: "${ANTHROPIC_API_KEY}"
+      base_url: "https://api.anthropic.com"
+    openrouter:
+      api_key: "${OPENROUTER_API_KEY}"
 
-anthropic:
-  enable_pass_through_mode: false
-  disable_interleaved_thinking: false
-  force_thinking: false
-  base_url: "https://api.anthropic.com"
-  version: "2023-06-01"
+  # Profile for OpenAI models via OpenRouter
+  openrouter-openai:
+    models:
+      - "openai/*"
+      - "gpt-*"
+    provider: "openrouter"
+    options:
+      prevent_empty_text_tool_result: true
+      reasoning:
+        format: "openai-responses-v1"
+        effort: "medium"
+    anthropic:
+      api_key: "${ANTHROPIC_API_KEY}"
+    openrouter:
+      api_key: "${OPENROUTER_API_KEY}"
+      base_url: "https://openrouter.ai/api"
 
-openrouter:
-  base_url: "https://openrouter.ai/api"
-  model_reasoning_format:
-    anthropic/claude-sonnet-4: "anthropic-claude-v1"
-    openai/gpt-5: "openai-responses-v1"
-  allowed_providers:
-    - "anthropic"
-    - "google-vertex"
-    - "amazon-bedrock"
+  # Default catch-all profile
+  default:
+    models:
+      - "*"             # Matches any model
+    provider: "openrouter"
+    options:
+      context_window_resize_factor: 0.6
+    anthropic:
+      api_key: "${ANTHROPIC_API_KEY}"
+    openrouter:
+      api_key: "${OPENROUTER_API_KEY}"
 ```
 
 ### Environment Variables
@@ -158,9 +174,10 @@ export ANTHROPIC_VERSION="2023-06-01"
 
 ### Core Components
 
+- **Profile System** (`pkg/profile/`): Model-to-configuration matching using prefix patterns (e.g., `claude-*`). First matching profile wins.
 - **Provider Interface** (`pkg/provider/`): Main API interface with auto-generated HTTP client
 - **Format Adapter** (`pkg/adapter/convert_request.go`): Converts Anthropic requests to OpenRouter format
-- **Stream Adapter** (`pkg/adapter/convert_stream.go`): Converts OpenRouter streams to Anthropic format  
+- **Stream Adapter** (`pkg/adapter/convert_stream.go`): Converts OpenRouter streams to Anthropic format
 - **Response Handler** (`pkg/provider/response_handler.go`): Handles streaming responses and error parsing
 - **Data Types**: Complete type definitions for both Anthropic and OpenRouter APIs
 
@@ -169,8 +186,8 @@ export ANTHROPIC_VERSION="2023-06-01"
 The adapter server operates as an HTTP proxy:
 
 1. **Listens** on configured host/port (default `127.0.0.1:2194`) at endpoint `/v1/messages`
-2. **Accepts** Anthropic Messages API requests from clients  
-3. **Routes** requests based on provider configuration and server tools
+2. **Accepts** Anthropic Messages API requests from clients
+3. **Matches** the request model against configured profiles to determine provider and settings
 4. **Converts** between API formats when using OpenRouter
 5. **Handles** both streaming and non-streaming responses
 6. **Provides** detailed logging with request IDs and token usage tracking
