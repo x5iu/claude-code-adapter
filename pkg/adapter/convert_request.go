@@ -27,9 +27,13 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 	for _, applyOption := range options {
 		applyOption(convertOptions)
 	}
+	maxTokens := src.MaxTokens
+	if minMaxTokens := prof.Options.GetMinMaxTokens(); minMaxTokens > 0 && maxTokens < minMaxTokens {
+		maxTokens = minMaxTokens
+	}
 	dst = &openrouter.CreateChatCompletionRequest{
 		Model:       src.Model,
-		MaxTokens:   lo.ToPtr(src.MaxTokens),
+		MaxTokens:   lo.ToPtr(maxTokens),
 		Temperature: lo.ToPtr(src.Temperature),
 		TopK:        src.TopK,
 		TopP:        src.TopP,

@@ -36,6 +36,9 @@ profiles:
       # Prevent empty text in tool_result by replacing it with "(No content)".
       # Some providers (like OpenAI) may reject empty content in tool results.
       prevent_empty_text_tool_result: false
+      # Minimum value for max_tokens. If the request's max_tokens is less than this value,
+      # it will be raised to this minimum. Set to 0 to disable (default).
+      min_max_tokens: 0
       reasoning:
         # Default reasoning detail format when not overridden per-model.
         # "anthropic-claude-v1" for Anthropic-style reasoning; "openai-responses-v1" for OpenAI Responses v1;
