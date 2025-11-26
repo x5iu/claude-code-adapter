@@ -1,22 +1,16 @@
 package adapter
 
 import (
+	"context"
 	"encoding/json"
-	"path/filepath"
 	"sync"
 
 	"github.com/samber/lo"
-	"github.com/spf13/viper"
 
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
-	"github.com/x5iu/claude-code-adapter/pkg/utils/delimiter"
+	"github.com/x5iu/claude-code-adapter/pkg/profile"
 )
-
-func init() {
-	viper.SetDefault(delimiter.ViperKey("options", "reasoning", "delimiter"), string(filepath.Separator))
-	viper.SetDefault(delimiter.ViperKey("options", "context_window_resize_factor"), 1.0)
-}
 
 type ConvertStreamOptions struct {
 	InputTokens                     int64
@@ -45,14 +39,16 @@ func ExtractOpenRouterChatCompletionBuilder(builder *openrouter.ChatCompletionBu
 }
 
 func ConvertOpenRouterStreamToAnthropicStream(
+	ctx context.Context,
 	stream openrouter.ChatCompletionStream,
 	options ...ConvertStreamOption,
 ) anthropic.MessageStream {
+	prof, _ := profile.FromContext(ctx)
 	convertOptions := &ConvertStreamOptions{}
 	for _, applyOption := range options {
 		applyOption(convertOptions)
 	}
-	contextWindowResizeFactor := viper.GetFloat64(delimiter.ViperKey("options", "context_window_resize_factor"))
+	contextWindowResizeFactor := prof.Options.GetContextWindowResizeFactor()
 	return func(yield func(anthropic.Event, error) bool) {
 		var (
 			startOnce  sync.Once
@@ -299,7 +295,7 @@ func ConvertOpenRouterStreamToAnthropicStream(
 								if reasoningDetailData := reasoningDetail.Data; reasoningDetailData != "" {
 									var signature string
 									if reasoningDetailID := reasoningDetail.ID; reasoningDetailID != "" {
-										signature = reasoningDetailID + viper.GetString(delimiter.ViperKey("options", "reasoning", "delimiter")) + reasoningDetailData
+										signature = reasoningDetailID + prof.Options.GetReasoningDelimiter() + reasoningDetailData
 									} else {
 										signature = reasoningDetailData
 									}

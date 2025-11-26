@@ -1,23 +1,16 @@
 package adapter
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/samber/lo"
-	"github.com/spf13/viper"
 
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
-	"github.com/x5iu/claude-code-adapter/pkg/utils/delimiter"
+	"github.com/x5iu/claude-code-adapter/pkg/profile"
 )
-
-func init() {
-	viper.SetDefault(delimiter.ViperKey("options", "strict"), false)
-	viper.SetDefault(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
-	viper.SetDefault(delimiter.ViperKey("options", "reasoning", "effort"), "")
-	viper.SetDefault(delimiter.ViperKey("options", "models"), map[string]string{})
-}
 
 type ConvertRequestOptions struct {
 }
@@ -25,9 +18,11 @@ type ConvertRequestOptions struct {
 type ConvertRequestOption func(*ConvertRequestOptions)
 
 func ConvertAnthropicRequestToOpenRouterRequest(
+	ctx context.Context,
 	src *anthropic.GenerateMessageRequest,
 	options ...ConvertRequestOption,
 ) (dst *openrouter.CreateChatCompletionRequest) {
+	prof, _ := profile.FromContext(ctx)
 	convertOptions := &ConvertRequestOptions{}
 	for _, applyOption := range options {
 		applyOption(convertOptions)
@@ -40,7 +35,7 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 		TopP:        src.TopP,
 		Usage:       &openrouter.ChatCompletionUsageOptions{Include: true},
 	}
-	if modelMapper := viper.GetStringMapString(delimiter.ViperKey("options", "models")); modelMapper != nil {
+	if modelMapper := prof.Options.GetModels(); modelMapper != nil {
 		if targetModel, ok := modelMapper[dst.Model]; ok {
 			dst.Model = targetModel
 		}
@@ -95,7 +90,7 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 					Function: &openrouter.ChatCompletionFunction{
 						Name:        srcTool.Name,
 						Description: srcTool.Description,
-						Strict:      viper.GetBool(delimiter.ViperKey("options", "strict")),
+						Strict:      prof.Options.GetStrict(),
 						Parameters:  openrouter.ChatCompletionJSONSchemaObject(srcTool.InputSchema),
 					},
 				}
@@ -120,10 +115,10 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 		}
 		dst.Reasoning = reasoning
 	}
-	switch format := getOpenRouterModelReasoningFormat(dst.Model); format {
+	switch format := getOpenRouterModelReasoningFormat(prof, dst.Model); format {
 	case openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1:
 		if dst.Reasoning == nil {
-			if viper.GetBool(delimiter.ViperKey("anthropic", "force_thinking")) {
+			if prof.Anthropic.GetForceThinking() {
 				if dst.MaxTokens == nil || *dst.MaxTokens <= 1024 {
 					dst.MaxTokens = lo.ToPtr(32 * 1024)
 				}
@@ -139,7 +134,7 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 			dst.Model = model
 			effort = openrouter.ChatCompletionReasoningEffort(suffix)
 		} else {
-			effort = openrouter.ChatCompletionReasoningEffort(viper.GetString(delimiter.ViperKey("options", "reasoning", "effort")))
+			effort = openrouter.ChatCompletionReasoningEffort(prof.Options.GetReasoningEffort())
 		}
 		if !effort.IsEmpty() {
 			if dst.Reasoning == nil {
@@ -264,7 +259,7 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 					ToolCallID: srcMessageContent.ToolUseID,
 				}
 				if srcMessageContent.Content != nil {
-					dstMessage.Content = convertAnthropicToolResultMessageContentsToOpenRouterChatCompletionMessageContent(srcMessageContent.Content)
+					dstMessage.Content = convertAnthropicToolResultMessageContentsToOpenRouterChatCompletionMessageContent(prof, srcMessageContent.Content)
 				}
 				dstMessages = append(dstMessages, &openrouterChatCompletionMessageWrapper{
 					ChatCompletionMessage:      dstMessage,
@@ -325,7 +320,7 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 			}
 		}
 	}
-	dst.Messages = canonicalOpenRouterMessages(dst.Model, dstMessages)
+	dst.Messages = canonicalOpenRouterMessages(prof, dst.Model, dstMessages)
 	return dst
 }
 
@@ -335,6 +330,7 @@ type openrouterChatCompletionMessageWrapper struct {
 }
 
 func canonicalOpenRouterMessages(
+	prof *profile.Profile,
 	model string,
 	messageWrappers []*openrouterChatCompletionMessageWrapper,
 ) (messages []*openrouter.ChatCompletionMessage) {
@@ -417,7 +413,7 @@ func canonicalOpenRouterMessages(
 				for index, reasoningDetail := range message.ReasoningDetails {
 					reasoningDetail.Index = index
 				}
-				switch format := getOpenRouterModelReasoningFormat(model); format {
+				switch format := getOpenRouterModelReasoningFormat(prof, model); format {
 				case openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1,
 					openrouter.ChatCompletionMessageReasoningDetailFormatGoogleGeminiV1:
 					revisedReasoningDetails := make([]*openrouter.ChatCompletionMessageReasoningDetail, 0, len(message.ReasoningDetails))
@@ -452,7 +448,7 @@ func canonicalOpenRouterMessages(
 								Format: format,
 								Index:  reasoningDetail.Index,
 							}
-							if delimiterIndex := strings.Index(signature, viper.GetString(delimiter.ViperKey("options", "reasoning", "delimiter"))); delimiterIndex != -1 {
+							if delimiterIndex := strings.Index(signature, prof.Options.GetReasoningDelimiter()); delimiterIndex != -1 {
 								derivedReasoningDetail.ID = signature[:delimiterIndex]
 								derivedReasoningDetail.Data = signature[delimiterIndex+1:]
 							} else {
@@ -486,6 +482,7 @@ func canonicalOpenRouterMessages(
 }
 
 func convertAnthropicToolResultMessageContentsToOpenRouterChatCompletionMessageContent(
+	prof *profile.Profile,
 	src anthropic.MessageContents,
 ) (dst *openrouter.ChatCompletionMessageContent) {
 	if len(src) == 0 {
@@ -509,7 +506,7 @@ func convertAnthropicToolResultMessageContentsToOpenRouterChatCompletionMessageC
 				Text: srcContent.Text,
 			}
 			// No idea why Claude Code send empty text in tool_result, so we replace it with a hint message if necessary.
-			if viper.GetBool(delimiter.ViperKey("options", "prevent_empty_text_tool_result")) && srcContent.Text == "" {
+			if prof.Options.GetPreventEmptyTextToolResult() && srcContent.Text == "" {
 				dstPart.Text = "(No content)"
 			}
 			if srcCacheControl := srcContent.CacheControl; srcCacheControl != nil {
@@ -541,12 +538,13 @@ func convertAnthropicToolResultMessageContentsToOpenRouterChatCompletionMessageC
 }
 
 func getOpenRouterModelReasoningFormat(
+	prof *profile.Profile,
 	model string,
 ) (format openrouter.ChatCompletionMessageReasoningDetailFormat) {
-	if modelReasoningFormat := viper.GetStringMapString(delimiter.ViperKey("openrouter", "model_reasoning_format")); modelReasoningFormat != nil {
+	if modelReasoningFormat := prof.OpenRouter.GetModelReasoningFormat(); modelReasoningFormat != nil {
 		if format, ok := modelReasoningFormat[model]; ok {
 			return openrouter.ChatCompletionMessageReasoningDetailFormat(format)
 		}
 	}
-	return openrouter.ChatCompletionMessageReasoningDetailFormat(viper.GetString(delimiter.ViperKey("options", "reasoning", "format")))
+	return openrouter.ChatCompletionMessageReasoningDetailFormat(prof.Options.GetReasoningFormat())
 }

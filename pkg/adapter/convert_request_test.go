@@ -1,16 +1,73 @@
 package adapter
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
 	"github.com/samber/lo"
-	"github.com/spf13/viper"
 
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
-	"github.com/x5iu/claude-code-adapter/pkg/utils/delimiter"
+	"github.com/x5iu/claude-code-adapter/pkg/profile"
 )
+
+// testProfile creates a test profile with default settings
+func testProfile() *profile.Profile {
+	return &profile.Profile{
+		Name:     "test",
+		Provider: "openrouter",
+		Options: &profile.OptionsConfig{
+			Strict:                    false,
+			ContextWindowResizeFactor: 1.0,
+			Reasoning: &profile.ReasoningConfig{
+				Format:    "anthropic-claude-v1",
+				Effort:    "",
+				Delimiter: "/",
+			},
+		},
+		Anthropic: &profile.AnthropicConfig{
+			BaseURL: "https://api.anthropic.com",
+			Version: "2023-06-01",
+		},
+		OpenRouter: &profile.OpenRouterConfig{
+			BaseURL: "https://openrouter.ai/api",
+		},
+	}
+}
+
+// testCtx creates a context with a test profile
+func testCtx() context.Context {
+	return profile.WithProfile(context.Background(), testProfile())
+}
+
+// testProfileWithOptions creates a test profile with custom options
+func testProfileWithOptions(opts func(*profile.Profile)) *profile.Profile {
+	p := testProfile()
+	opts(p)
+	return p
+}
+
+// testCtxWithOptions creates a context with a custom test profile
+func testCtxWithOptions(opts func(*profile.Profile)) context.Context {
+	return profile.WithProfile(context.Background(), testProfileWithOptions(opts))
+}
+
+// testCtxWithReasoningFormat creates a test context with specific reasoning format and effort
+func testCtxWithReasoningFormat(format, effort string) context.Context {
+	return testCtxWithOptions(func(p *profile.Profile) {
+		p.Options.Reasoning.Format = format
+		p.Options.Reasoning.Effort = effort
+	})
+}
+
+// testCtxWithForceThinking creates a test context with force thinking enabled
+func testCtxWithForceThinking(format string) context.Context {
+	return testCtxWithOptions(func(p *profile.Profile) {
+		p.Options.Reasoning.Format = format
+		p.Anthropic.ForceThinking = true
+	})
+}
 
 func TestConvertAnthropicRequestToOpenRouterRequest_BasicFields(t *testing.T) {
 	tests := []struct {
@@ -93,7 +150,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_BasicFields(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ConvertAnthropicRequestToOpenRouterRequest(tt.src)
+			got := ConvertAnthropicRequestToOpenRouterRequest(testCtx(), tt.src)
 			if !tt.want(got) {
 				t.Errorf("ConvertAnthropicRequestToOpenRouterRequest() validation failed")
 			}
@@ -178,7 +235,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ToolChoice(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ConvertAnthropicRequestToOpenRouterRequest(tt.src)
+			got := ConvertAnthropicRequestToOpenRouterRequest(testCtx(), tt.src)
 			if !tt.want(got) {
 				t.Errorf("ConvertAnthropicRequestToOpenRouterRequest() tool choice validation failed")
 			}
@@ -187,10 +244,10 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ToolChoice(t *testing.T) {
 }
 
 func TestConvertAnthropicRequestToOpenRouterRequest_Tools(t *testing.T) {
-	// Set up viper for strict mode testing
-	prevStrict := viper.GetBool(delimiter.ViperKey("options", "strict"))
-	viper.Set(delimiter.ViperKey("options", "strict"), true)
-	defer viper.Set(delimiter.ViperKey("options", "strict"), prevStrict)
+	// Set up profile with strict mode enabled
+	ctx := testCtxWithOptions(func(p *profile.Profile) {
+		p.Options.Strict = true
+	})
 
 	inputSchema := map[string]any{
 		"type": "object",
@@ -219,7 +276,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_Tools(t *testing.T) {
 		Messages: []*anthropic.Message{},
 	}
 
-	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	got := ConvertAnthropicRequestToOpenRouterRequest(ctx, src)
 
 	if len(got.Tools) != 1 {
 		t.Errorf("Expected 1 tool, got %d", len(got.Tools))
@@ -293,7 +350,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_Thinking(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ConvertAnthropicRequestToOpenRouterRequest(tt.src)
+			got := ConvertAnthropicRequestToOpenRouterRequest(testCtx(), tt.src)
 			if !tt.want(got) {
 				t.Errorf("ConvertAnthropicRequestToOpenRouterRequest() thinking validation failed")
 			}
@@ -589,7 +646,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_Messages(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ConvertAnthropicRequestToOpenRouterRequest(tt.src)
+			got := ConvertAnthropicRequestToOpenRouterRequest(testCtx(), tt.src)
 			if !tt.want(got) {
 				t.Errorf("ConvertAnthropicRequestToOpenRouterRequest() message validation failed")
 			}
@@ -676,7 +733,7 @@ func TestConvertAnthropicToolResultMessageContentsToOpenRouterChatCompletionMess
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := convertAnthropicToolResultMessageContentsToOpenRouterChatCompletionMessageContent(tt.src)
+			got := convertAnthropicToolResultMessageContentsToOpenRouterChatCompletionMessageContent(testProfile(), tt.src)
 			if !tt.want(got) {
 				t.Errorf("convertAnthropicToolResultMessageContentsToOpenRouterChatCompletionMessageContent() validation failed")
 			}
@@ -881,7 +938,7 @@ func TestCanonicalOpenRouterMessages(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := canonicalOpenRouterMessages("claude-3-5-sonnet-20241022", tt.src)
+			got := canonicalOpenRouterMessages(testProfile(), "claude-3-5-sonnet-20241022", tt.src)
 			if !tt.want(got) {
 				t.Errorf("canonicalOpenRouterMessages() validation failed")
 			}
@@ -979,7 +1036,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ConvertAnthropicRequestToOpenRouterRequest(tt.src)
+			got := ConvertAnthropicRequestToOpenRouterRequest(testCtx(), tt.src)
 			if !tt.want(got) {
 				t.Errorf("ConvertAnthropicRequestToOpenRouterRequest() edge case validation failed")
 			}
@@ -1010,7 +1067,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_PanicScenarios(t *testing.T)
 			},
 		}
 
-		ConvertAnthropicRequestToOpenRouterRequest(src)
+		ConvertAnthropicRequestToOpenRouterRequest(testCtx(), src)
 	})
 }
 
@@ -1095,15 +1152,11 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ModelMapper(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			prev := viper.GetStringMapString(delimiter.ViperKey("options", "models"))
-			if tt.modelMapper != nil {
-				viper.Set(delimiter.ViperKey("options", "models"), tt.modelMapper)
-			} else {
-				viper.Set(delimiter.ViperKey("options", "models"), map[string]string{})
-			}
-			defer viper.Set(delimiter.ViperKey("options", "models"), prev)
+			ctx := testCtxWithOptions(func(p *profile.Profile) {
+				p.Options.Models = tt.modelMapper
+			})
 
-			got := ConvertAnthropicRequestToOpenRouterRequest(tt.src)
+			got := ConvertAnthropicRequestToOpenRouterRequest(ctx, tt.src)
 
 			if got.Model != tt.wantModel {
 				t.Errorf("ConvertAnthropicRequestToOpenRouterRequest() model = %q, want %q", got.Model, tt.wantModel)
@@ -1149,15 +1202,13 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ModelMapperIntegration(t *te
 			},
 		}
 
-		mapper := map[string]string{
-			"claude-3-5-sonnet-20241022": "anthropic/claude-3-5-sonnet:beta",
-		}
+		ctx := testCtxWithOptions(func(p *profile.Profile) {
+			p.Options.Models = map[string]string{
+				"claude-3-5-sonnet-20241022": "anthropic/claude-3-5-sonnet:beta",
+			}
+		})
 
-		prev := viper.GetStringMapString(delimiter.ViperKey("options", "models"))
-		viper.Set(delimiter.ViperKey("options", "models"), mapper)
-		defer viper.Set(delimiter.ViperKey("options", "models"), prev)
-
-		got := ConvertAnthropicRequestToOpenRouterRequest(src)
+		got := ConvertAnthropicRequestToOpenRouterRequest(ctx, src)
 
 		// Verify model was mapped
 		if got.Model != "anthropic/claude-3-5-sonnet:beta" {
@@ -1198,17 +1249,15 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ModelMapperIntegration(t *te
 			},
 		}
 
-		mapper := map[string]string{
-			"claude-3-5-sonnet-20241022": "anthropic/claude-3-5-sonnet:beta",
-			"claude-3-opus-20240229":     "anthropic/claude-3-opus:beta",
-			"claude-3-haiku-20240307":    "anthropic/claude-3-haiku:beta",
-		}
+		ctx := testCtxWithOptions(func(p *profile.Profile) {
+			p.Options.Models = map[string]string{
+				"claude-3-5-sonnet-20241022": "anthropic/claude-3-5-sonnet:beta",
+				"claude-3-opus-20240229":     "anthropic/claude-3-opus:beta",
+				"claude-3-haiku-20240307":    "anthropic/claude-3-haiku:beta",
+			}
+		})
 
-		prev := viper.GetStringMapString(delimiter.ViperKey("options", "models"))
-		viper.Set(delimiter.ViperKey("options", "models"), mapper)
-		defer viper.Set(delimiter.ViperKey("options", "models"), prev)
-
-		got := ConvertAnthropicRequestToOpenRouterRequest(src)
+		got := ConvertAnthropicRequestToOpenRouterRequest(ctx, src)
 
 		if got.Model != "anthropic/claude-3-haiku:beta" {
 			t.Errorf("Expected model 'anthropic/claude-3-haiku:beta', got %q", got.Model)
@@ -1382,7 +1431,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_CacheControl(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ConvertAnthropicRequestToOpenRouterRequest(tc.src)
+			got := ConvertAnthropicRequestToOpenRouterRequest(testCtx(), tc.src)
 			if !tc.want(got) {
 				t.Errorf("Test case %s failed validation", tc.name)
 			}
@@ -1461,7 +1510,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_SystemMessageTypes(t *testin
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ConvertAnthropicRequestToOpenRouterRequest(tc.src)
+			got := ConvertAnthropicRequestToOpenRouterRequest(testCtx(), tc.src)
 			if !tc.want(got) {
 				t.Errorf("Test case %s failed validation", tc.name)
 			}
@@ -1471,9 +1520,9 @@ func TestConvertAnthropicRequestToOpenRouterRequest_SystemMessageTypes(t *testin
 
 func TestConvertAnthropicRequestToOpenRouterRequest_ToolTypeNil(t *testing.T) {
 	// Test that a tool with nil Type is treated as custom tool
-	prevStrict := viper.GetBool(delimiter.ViperKey("options", "strict"))
-	viper.Set(delimiter.ViperKey("options", "strict"), true)
-	defer viper.Set(delimiter.ViperKey("options", "strict"), prevStrict)
+	ctx := testCtxWithOptions(func(p *profile.Profile) {
+		p.Options.Strict = true
+	})
 
 	inputSchema := map[string]any{
 		"type": "object",
@@ -1499,7 +1548,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ToolTypeNil(t *testing.T) {
 		Messages: []*anthropic.Message{},
 	}
 
-	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	got := ConvertAnthropicRequestToOpenRouterRequest(ctx, src)
 
 	if len(got.Tools) != 1 {
 		t.Errorf("Expected 1 tool, got %d", len(got.Tools))
@@ -1556,7 +1605,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_WebSearchTool(t *testing.T) 
 		Messages: []*anthropic.Message{},
 	}
 
-	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	got := ConvertAnthropicRequestToOpenRouterRequest(testCtx(), src)
 
 	// Web Search Tool should be filtered out (not ToolTypeCustom)
 	if len(got.Tools) != 1 {
@@ -1599,7 +1648,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_CacheControlCleanup(t *testi
 		},
 	}
 
-	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	got := ConvertAnthropicRequestToOpenRouterRequest(testCtx(), src)
 
 	// Should have 1 message with 2 parts (merged by canonicalOpenRouterMessages)
 	if len(got.Messages) != 1 {
@@ -1661,7 +1710,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_NewMessageFormat(t *testing.
 		},
 	}
 
-	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	got := ConvertAnthropicRequestToOpenRouterRequest(testCtx(), src)
 
 	if len(got.Messages) != 2 {
 		t.Errorf("Expected 2 messages, got %d", len(got.Messages))
@@ -1691,12 +1740,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_NewMessageFormat(t *testing.
 }
 
 func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_AnthropicClaudeV1(t *testing.T) {
-	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
-	prevEffort := viper.GetString(delimiter.ViperKey("options", "reasoning", "effort"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), "high")
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), prevEffort)
+	ctx := testCtxWithReasoningFormat("anthropic-claude-v1", "high")
 
 	src := &anthropic.GenerateMessageRequest{
 		Model:     "claude-3-5-sonnet-20241022",
@@ -1708,7 +1752,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_AnthropicCla
 		Messages: []*anthropic.Message{},
 	}
 
-	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	got := ConvertAnthropicRequestToOpenRouterRequest(ctx, src)
 	if got.Reasoning == nil {
 		t.Fatalf("Reasoning is nil")
 	}
@@ -1721,12 +1765,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_AnthropicCla
 }
 
 func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_OpenAIResponsesV1(t *testing.T) {
-	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
-	prevEffort := viper.GetString(delimiter.ViperKey("options", "reasoning", "effort"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), "medium")
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), prevEffort)
+	ctx := testCtxWithReasoningFormat("openai-responses-v1", "medium")
 
 	src := &anthropic.GenerateMessageRequest{
 		Model:     "gpt-5",
@@ -1738,7 +1777,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_OpenAIRespon
 		Messages: []*anthropic.Message{},
 	}
 
-	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	got := ConvertAnthropicRequestToOpenRouterRequest(ctx, src)
 	if got.Reasoning == nil {
 		t.Fatalf("Reasoning is nil")
 	}
@@ -1751,12 +1790,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_OpenAIRespon
 }
 
 func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_ModelEffortSuffix(t *testing.T) {
-	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
-	prevEffort := viper.GetString(delimiter.ViperKey("options", "reasoning", "effort"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), "low")
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), prevEffort)
+	ctx := testCtxWithReasoningFormat("openai-responses-v1", "low")
 
 	src := &anthropic.GenerateMessageRequest{
 		Model:     "gpt-5:high",
@@ -1768,7 +1802,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_ModelEffor
 		Messages: []*anthropic.Message{},
 	}
 
-	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	got := ConvertAnthropicRequestToOpenRouterRequest(ctx, src)
 	if got.Reasoning == nil {
 		t.Fatalf("Reasoning is nil")
 	}
@@ -1784,12 +1818,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_ModelEffor
 }
 
 func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_NoSuffixKeepsConfigEffort(t *testing.T) {
-	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
-	prevEffort := viper.GetString(delimiter.ViperKey("options", "reasoning", "effort"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), "low")
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), prevEffort)
+	ctx := testCtxWithReasoningFormat("openai-responses-v1", "low")
 
 	src := &anthropic.GenerateMessageRequest{
 		Model:     "gpt-5",
@@ -1801,7 +1830,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_NoSuffixKe
 		Messages: []*anthropic.Message{},
 	}
 
-	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	got := ConvertAnthropicRequestToOpenRouterRequest(ctx, src)
 	if got.Reasoning == nil {
 		t.Fatalf("Reasoning is nil")
 	}
@@ -1817,12 +1846,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_NoSuffixKe
 }
 
 func TestConvertAnthropicRequestToOpenRouterRequest_AnthropicClaudeV1_IgnoreSuffixAndKeepModel(t *testing.T) {
-	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
-	prevEffort := viper.GetString(delimiter.ViperKey("options", "reasoning", "effort"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), "high")
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), prevEffort)
+	ctx := testCtxWithReasoningFormat("anthropic-claude-v1", "high")
 
 	src := &anthropic.GenerateMessageRequest{
 		Model:     "claude-3-7-sonnet-20250219:thinking",
@@ -1834,7 +1858,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_AnthropicClaudeV1_IgnoreSuff
 		Messages: []*anthropic.Message{},
 	}
 
-	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	got := ConvertAnthropicRequestToOpenRouterRequest(ctx, src)
 	if got.Reasoning == nil {
 		t.Fatalf("Reasoning is nil")
 	}
@@ -1850,12 +1874,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_AnthropicClaudeV1_IgnoreSuff
 }
 
 func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_ModelEffortSuffix_NoThinking(t *testing.T) {
-	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
-	prevEffort := viper.GetString(delimiter.ViperKey("options", "reasoning", "effort"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), "low")
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "effort"), prevEffort)
+	ctx := testCtxWithReasoningFormat("openai-responses-v1", "low")
 
 	src := &anthropic.GenerateMessageRequest{
 		Model:     "gpt-5:high",
@@ -1863,7 +1882,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_ModelEffor
 		Messages:  []*anthropic.Message{},
 	}
 
-	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	got := ConvertAnthropicRequestToOpenRouterRequest(ctx, src)
 	if got.Reasoning == nil {
 		t.Fatalf("Reasoning is nil")
 	}
@@ -1879,18 +1898,15 @@ func TestConvertAnthropicRequestToOpenRouterRequest_OpenAIResponsesV1_ModelEffor
 }
 
 func TestDefaultReasoningEffort(t *testing.T) {
-	if effort := openrouter.ChatCompletionReasoningEffort(viper.GetString(delimiter.ViperKey("options", "reasoning", "effort"))); !effort.IsEmpty() {
-		t.Errorf("%q Effort should be empty, got %q", delimiter.ViperKey("options", "reasoning", "effort"), effort)
+	// Default profile has empty effort
+	p := testProfile()
+	if effort := openrouter.ChatCompletionReasoningEffort(p.Options.Reasoning.Effort); !effort.IsEmpty() {
+		t.Errorf("Effort should be empty, got %q", effort)
 	}
 }
 
 func TestForceThinking_AnthropicClaudeV1_NoReasoningAddsReasoning(t *testing.T) {
-	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
-	prevForce := viper.GetBool(delimiter.ViperKey("anthropic", "force_thinking"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
-	viper.Set(delimiter.ViperKey("anthropic", "force_thinking"), true)
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
-	defer viper.Set(delimiter.ViperKey("anthropic", "force_thinking"), prevForce)
+	ctx := testCtxWithForceThinking("anthropic-claude-v1")
 
 	src := &anthropic.GenerateMessageRequest{
 		Model:     "claude-3-5-sonnet-20241022",
@@ -1898,7 +1914,7 @@ func TestForceThinking_AnthropicClaudeV1_NoReasoningAddsReasoning(t *testing.T) 
 		Messages:  []*anthropic.Message{},
 	}
 
-	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	got := ConvertAnthropicRequestToOpenRouterRequest(ctx, src)
 
 	if got.Reasoning == nil || !got.Reasoning.Enabled {
 		t.Fatalf("force thinking should enable reasoning")
@@ -1912,12 +1928,7 @@ func TestForceThinking_AnthropicClaudeV1_NoReasoningAddsReasoning(t *testing.T) 
 }
 
 func TestForceThinking_DoesNotOverrideExistingReasoning(t *testing.T) {
-	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
-	prevForce := viper.GetBool(delimiter.ViperKey("anthropic", "force_thinking"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
-	viper.Set(delimiter.ViperKey("anthropic", "force_thinking"), true)
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
-	defer viper.Set(delimiter.ViperKey("anthropic", "force_thinking"), prevForce)
+	ctx := testCtxWithForceThinking("anthropic-claude-v1")
 
 	src := &anthropic.GenerateMessageRequest{
 		Model:     "claude-3-5-sonnet-20241022",
@@ -1926,7 +1937,7 @@ func TestForceThinking_DoesNotOverrideExistingReasoning(t *testing.T) {
 		Messages:  []*anthropic.Message{},
 	}
 
-	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	got := ConvertAnthropicRequestToOpenRouterRequest(ctx, src)
 
 	if got.Reasoning == nil || !got.Reasoning.Enabled {
 		t.Fatalf("Reasoning should remain enabled from source")
@@ -1937,15 +1948,10 @@ func TestForceThinking_DoesNotOverrideExistingReasoning(t *testing.T) {
 }
 
 func TestForceThinking_MaxTokensBoundaries(t *testing.T) {
-	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
-	prevForce := viper.GetBool(delimiter.ViperKey("anthropic", "force_thinking"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1))
-	viper.Set(delimiter.ViperKey("anthropic", "force_thinking"), true)
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
-	defer viper.Set(delimiter.ViperKey("anthropic", "force_thinking"), prevForce)
+	ctx := testCtxWithForceThinking("anthropic-claude-v1")
 
 	srcSmall := &anthropic.GenerateMessageRequest{Model: "claude-3-5-sonnet-20241022", MaxTokens: 10, Messages: []*anthropic.Message{}}
-	gotSmall := ConvertAnthropicRequestToOpenRouterRequest(srcSmall)
+	gotSmall := ConvertAnthropicRequestToOpenRouterRequest(ctx, srcSmall)
 	if gotSmall.Reasoning == nil || !gotSmall.Reasoning.Enabled {
 		t.Fatalf("force thinking should enable reasoning (small)")
 	}
@@ -1957,7 +1963,7 @@ func TestForceThinking_MaxTokensBoundaries(t *testing.T) {
 	}
 
 	srcLarge := &anthropic.GenerateMessageRequest{Model: "claude-3-5-sonnet-20241022", MaxTokens: 100000, Messages: []*anthropic.Message{}}
-	gotLarge := ConvertAnthropicRequestToOpenRouterRequest(srcLarge)
+	gotLarge := ConvertAnthropicRequestToOpenRouterRequest(ctx, srcLarge)
 	if gotLarge.Reasoning == nil || !gotLarge.Reasoning.Enabled {
 		t.Fatalf("force thinking should enable reasoning (large)")
 	}
@@ -1973,9 +1979,7 @@ func TestForceThinking_MaxTokensBoundaries(t *testing.T) {
 }
 
 func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_GoogleGeminiV1(t *testing.T) {
-	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatGoogleGeminiV1))
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
+	ctx := testCtxWithReasoningFormat("google-gemini-v1", "")
 
 	src := &anthropic.GenerateMessageRequest{
 		Model:     "google/gemini-3-flash-thinking",
@@ -1987,7 +1991,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_GoogleGemini
 		Messages: []*anthropic.Message{},
 	}
 
-	got := ConvertAnthropicRequestToOpenRouterRequest(src)
+	got := ConvertAnthropicRequestToOpenRouterRequest(ctx, src)
 	if got.Reasoning == nil {
 		t.Fatalf("Reasoning is nil")
 	}
@@ -2006,9 +2010,7 @@ func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_GoogleGemini
 }
 
 func TestConvertAnthropicRequestToOpenRouterRequest_GoogleGeminiV1_ForceEnabled(t *testing.T) {
-	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatGoogleGeminiV1))
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
+	ctx := testCtxWithReasoningFormat("google-gemini-v1", "")
 
 	tests := []struct {
 		name      string
@@ -2081,19 +2083,17 @@ func TestConvertAnthropicRequestToOpenRouterRequest_GoogleGeminiV1_ForceEnabled(
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ConvertAnthropicRequestToOpenRouterRequest(tt.src)
+			got := ConvertAnthropicRequestToOpenRouterRequest(ctx, tt.src)
 			tt.wantCheck(t, got)
 		})
 	}
 }
 
 func TestCanonicalOpenRouterMessages_GoogleGeminiV1Format(t *testing.T) {
-	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
-	prevDelimiter := viper.GetString(delimiter.ViperKey("options", "reasoning", "delimiter"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatGoogleGeminiV1))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "delimiter"), "/")
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "delimiter"), prevDelimiter)
+	prof := testProfileWithOptions(func(p *profile.Profile) {
+		p.Options.Reasoning.Format = "google-gemini-v1"
+		p.Options.Reasoning.Delimiter = "/"
+	})
 
 	// Create a single anthropic message instance to be shared
 	sharedMsg := &anthropic.Message{Role: anthropic.MessageRoleAssistant}
@@ -2135,7 +2135,7 @@ func TestCanonicalOpenRouterMessages_GoogleGeminiV1Format(t *testing.T) {
 		},
 	}
 
-	messages := canonicalOpenRouterMessages("google/gemini-3-flash-thinking", src)
+	messages := canonicalOpenRouterMessages(prof, "google/gemini-3-flash-thinking", src)
 	if len(messages) != 1 {
 		t.Fatalf("Expected 1 merged message, got %d", len(messages))
 	}
@@ -2232,9 +2232,9 @@ func TestCanonicalOpenRouterMessages_GoogleGeminiV1Format(t *testing.T) {
 }
 
 func TestCanonicalOpenRouterMessages_OpenAIResponsesV1Format(t *testing.T) {
-	prevFormat := viper.GetString(delimiter.ViperKey("options", "reasoning", "format"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "format"), string(openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1))
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "format"), prevFormat)
+	prof := testProfileWithOptions(func(p *profile.Profile) {
+		p.Options.Reasoning.Format = "openai-responses-v1"
+	})
 
 	// Create a single anthropic message instance to be shared
 	sharedMsg := &anthropic.Message{Role: anthropic.MessageRoleAssistant}
@@ -2258,7 +2258,7 @@ func TestCanonicalOpenRouterMessages_OpenAIResponsesV1Format(t *testing.T) {
 		},
 	}
 
-	messages := canonicalOpenRouterMessages("gpt-5", src)
+	messages := canonicalOpenRouterMessages(prof, "gpt-5", src)
 	if len(messages) != 1 {
 		t.Fatalf("Expected 1 merged message, got %d", len(messages))
 	}

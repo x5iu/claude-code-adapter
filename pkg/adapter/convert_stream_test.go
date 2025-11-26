@@ -1,15 +1,50 @@
 package adapter
 
 import (
+	"context"
 	"errors"
 	"testing"
 
-	"github.com/spf13/viper"
-
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
-	"github.com/x5iu/claude-code-adapter/pkg/utils/delimiter"
+	"github.com/x5iu/claude-code-adapter/pkg/profile"
 )
+
+// streamTestCtx creates a context with a test profile for stream tests
+func streamTestCtx() context.Context {
+	return profile.WithProfile(context.Background(), &profile.Profile{
+		Name:     "test",
+		Provider: "openrouter",
+		Options: &profile.OptionsConfig{
+			ContextWindowResizeFactor: 1.0,
+			Reasoning: &profile.ReasoningConfig{
+				Format:    "anthropic-claude-v1",
+				Effort:    "",
+				Delimiter: "/",
+			},
+		},
+		Anthropic:  &profile.AnthropicConfig{},
+		OpenRouter: &profile.OpenRouterConfig{},
+	})
+}
+
+// streamTestCtxWithDelimiter creates a context with custom delimiter
+func streamTestCtxWithDelimiter(delimiter string) context.Context {
+	return profile.WithProfile(context.Background(), &profile.Profile{
+		Name:     "test",
+		Provider: "openrouter",
+		Options: &profile.OptionsConfig{
+			ContextWindowResizeFactor: 1.0,
+			Reasoning: &profile.ReasoningConfig{
+				Format:    "anthropic-claude-v1",
+				Effort:    "",
+				Delimiter: delimiter,
+			},
+		},
+		Anthropic:  &profile.AnthropicConfig{},
+		OpenRouter: &profile.OpenRouterConfig{},
+	})
+}
 
 func TestConvertOpenRouterStreamToAnthropicStream_BasicConversion(t *testing.T) {
 	tests := []struct {
@@ -101,7 +136,7 @@ func TestConvertOpenRouterStreamToAnthropicStream_BasicConversion(t *testing.T) 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			stream := createMockStream(tt.chunks, nil)
-			anthropicStream := ConvertOpenRouterStreamToAnthropicStream(stream, tt.options...)
+			anthropicStream := ConvertOpenRouterStreamToAnthropicStream(streamTestCtx(), stream, tt.options...)
 
 			var events []anthropic.Event
 			for event, err := range anthropicStream {
@@ -251,7 +286,7 @@ func TestConvertOpenRouterStreamToAnthropicStream_ContentTypes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			stream := createMockStream(tt.chunks, nil)
-			anthropicStream := ConvertOpenRouterStreamToAnthropicStream(stream)
+			anthropicStream := ConvertOpenRouterStreamToAnthropicStream(streamTestCtx(), stream)
 
 			var events []anthropic.Event
 			for event, err := range anthropicStream {
@@ -386,7 +421,7 @@ func TestConvertOpenRouterStreamToAnthropicStream_ContentTypeTransitions(t *test
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			stream := createMockStream(tt.chunks, nil)
-			anthropicStream := ConvertOpenRouterStreamToAnthropicStream(stream)
+			anthropicStream := ConvertOpenRouterStreamToAnthropicStream(streamTestCtx(), stream)
 
 			var events []anthropic.Event
 			for event, err := range anthropicStream {
@@ -451,7 +486,7 @@ func TestConvertOpenRouterStreamToAnthropicStream_FinishReasons(t *testing.T) {
 			}
 
 			stream := createMockStream(chunks, nil)
-			anthropicStream := ConvertOpenRouterStreamToAnthropicStream(stream)
+			anthropicStream := ConvertOpenRouterStreamToAnthropicStream(streamTestCtx(), stream)
 
 			var events []anthropic.Event
 			for event, err := range anthropicStream {
@@ -543,7 +578,7 @@ func TestConvertOpenRouterStreamToAnthropicStream_Usage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			stream := createMockStream(tt.chunks, nil)
-			anthropicStream := ConvertOpenRouterStreamToAnthropicStream(stream, tt.options...)
+			anthropicStream := ConvertOpenRouterStreamToAnthropicStream(streamTestCtx(), stream, tt.options...)
 
 			var events []anthropic.Event
 			for event, err := range anthropicStream {
@@ -578,7 +613,7 @@ func TestConvertOpenRouterStreamToAnthropicStream_ErrorHandling(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			stream := createMockStream(nil, tt.streamError)
-			anthropicStream := ConvertOpenRouterStreamToAnthropicStream(stream)
+			anthropicStream := ConvertOpenRouterStreamToAnthropicStream(streamTestCtx(), stream)
 
 			var events []anthropic.Event
 			var lastErr error
@@ -617,7 +652,7 @@ func TestConvertOpenRouterStreamToAnthropicStream_MultipleReasoningDetails(t *te
 	}
 
 	stream := createMockStream(chunks, nil)
-	anthropicStream := ConvertOpenRouterStreamToAnthropicStream(stream)
+	anthropicStream := ConvertOpenRouterStreamToAnthropicStream(streamTestCtx(), stream)
 
 	var thinkingDeltas []*anthropic.EventContentBlockDelta
 	var signatureDeltas []*anthropic.EventContentBlockDelta
@@ -658,7 +693,7 @@ func TestConvertOpenRouterStreamToAnthropicStream_ProviderExtraction(t *testing.
 	var orProvider string
 	chunks := []*openrouter.ChatCompletionChunk{{ID: "chatcmpl-x", Model: "m", Provider: providerName}}
 	stream := createMockStream(chunks, nil)
-	anthropicStream := ConvertOpenRouterStreamToAnthropicStream(stream, ExtractOpenRouterProvider(&orProvider))
+	anthropicStream := ConvertOpenRouterStreamToAnthropicStream(streamTestCtx(), stream, ExtractOpenRouterProvider(&orProvider))
 	for range anthropicStream {
 	}
 	if orProvider != providerName {
@@ -667,9 +702,6 @@ func TestConvertOpenRouterStreamToAnthropicStream_ProviderExtraction(t *testing.
 }
 
 func TestConvertOpenRouterStreamToAnthropicStream_EncryptedReasoning_CustomDelimiter(t *testing.T) {
-	prev := viper.GetString(delimiter.ViperKey("options", "reasoning", "delimiter"))
-	viper.Set(delimiter.ViperKey("options", "reasoning", "delimiter"), "|")
-	defer viper.Set(delimiter.ViperKey("options", "reasoning", "delimiter"), prev)
 	chunks := []*openrouter.ChatCompletionChunk{
 		{
 			ID:    "chatcmpl-1",
@@ -681,7 +713,7 @@ func TestConvertOpenRouterStreamToAnthropicStream_EncryptedReasoning_CustomDelim
 	}
 	stream := createMockStream(chunks, nil)
 	var sigs []string
-	for event, err := range ConvertOpenRouterStreamToAnthropicStream(stream) {
+	for event, err := range ConvertOpenRouterStreamToAnthropicStream(streamTestCtxWithDelimiter("|"), stream) {
 		if err != nil {
 			t.Fatalf("%v", err)
 		}
@@ -705,7 +737,7 @@ func TestConvertOpenRouterStreamToAnthropicStream_EmptyReasoningAndToolArgs_NoDe
 		},
 	}
 	stream := createMockStream(chunks, nil)
-	for event, err := range ConvertOpenRouterStreamToAnthropicStream(stream) {
+	for event, err := range ConvertOpenRouterStreamToAnthropicStream(streamTestCtx(), stream) {
 		if err != nil {
 			t.Fatalf("%v", err)
 		}
@@ -726,7 +758,7 @@ func TestConvertOpenRouterStreamToAnthropicStream_CrossTypeBlockStop(t *testing.
 	stream := createMockStream(chunks, nil)
 	var starts []*anthropic.EventContentBlockStart
 	var stops []*anthropic.EventContentBlockStop
-	for event, err := range ConvertOpenRouterStreamToAnthropicStream(stream) {
+	for event, err := range ConvertOpenRouterStreamToAnthropicStream(streamTestCtx(), stream) {
 		if err != nil {
 			t.Fatalf("%v", err)
 		}
@@ -763,7 +795,7 @@ func TestConvertOpenRouterStreamToAnthropicStream_CacheReadInputTokens_TwoReques
 		return createMockStream(chunks, nil)
 	}
 	var first, second int64
-	for event, err := range ConvertOpenRouterStreamToAnthropicStream(mk(0)) {
+	for event, err := range ConvertOpenRouterStreamToAnthropicStream(streamTestCtx(), mk(0)) {
 		if err != nil {
 			t.Fatalf("%v", err)
 		}
@@ -771,7 +803,7 @@ func TestConvertOpenRouterStreamToAnthropicStream_CacheReadInputTokens_TwoReques
 			first = d.Delta.Usage.CacheReadInputTokens
 		}
 	}
-	for event, err := range ConvertOpenRouterStreamToAnthropicStream(mk(32)) {
+	for event, err := range ConvertOpenRouterStreamToAnthropicStream(streamTestCtx(), mk(32)) {
 		if err != nil {
 			t.Fatalf("%v", err)
 		}

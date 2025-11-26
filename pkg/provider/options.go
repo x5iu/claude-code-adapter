@@ -2,28 +2,50 @@ package provider
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
+	"strings"
 
-	"github.com/spf13/viper"
-
-	"github.com/x5iu/claude-code-adapter/pkg/utils/delimiter"
+	"github.com/x5iu/claude-code-adapter/pkg/profile"
 )
 
-func init() {
-	viper.SetDefault(delimiter.ViperKey("provider"), "openrouter")
-	viper.SetDefault(delimiter.ViperKey("openrouter", "base_url"), "https://openrouter.ai/api")
-	viper.MustBindEnv(delimiter.ViperKey("openrouter", "base_url"), "OPENROUTER_BASE_URL")
-	viper.MustBindEnv(delimiter.ViperKey("openrouter", "api_key"), "OPENROUTER_API_KEY")
-	viper.SetDefault(delimiter.ViperKey("anthropic", "base_url"), "https://api.anthropic.com")
-	viper.SetDefault(delimiter.ViperKey("anthropic", "version"), "2023-06-01")
-	viper.MustBindEnv(delimiter.ViperKey("anthropic", "base_url"), "ANTHROPIC_BASE_URL")
-	viper.MustBindEnv(delimiter.ViperKey("anthropic", "api_key"), "ANTHROPIC_API_KEY")
-	viper.MustBindEnv(delimiter.ViperKey("anthropic", "version"), "ANTHROPIC_VERSION")
-}
-
-func getConfig(key ...string) string {
-	return viper.GetString(delimiter.ViperKey(key...))
+// getConfigFromContext retrieves configuration values from the profile in context.
+// This function is used by the generated defc code templates.
+// The ctx parameter comes from the template's .ctx field.
+// Keys should be: "anthropic", "api_key" or "openrouter", "base_url", etc.
+func getConfigFromContext(ctx context.Context, keys ...string) string {
+	prof, ok := profile.FromContext(ctx)
+	if !ok || len(keys) < 2 {
+		return ""
+	}
+	provider := strings.ToLower(keys[0])
+	key := strings.ToLower(keys[1])
+	switch provider {
+	case "anthropic":
+		if prof.Anthropic == nil {
+			return ""
+		}
+		switch key {
+		case "api_key":
+			return prof.Anthropic.GetAPIKey()
+		case "base_url":
+			return prof.Anthropic.GetBaseURL()
+		case "version":
+			return prof.Anthropic.GetVersion()
+		}
+	case "openrouter":
+		if prof.OpenRouter == nil {
+			return ""
+		}
+		switch key {
+		case "api_key":
+			return prof.OpenRouter.GetAPIKey()
+		case "base_url":
+			return prof.OpenRouter.GetBaseURL()
+		}
+	}
+	return ""
 }
 
 type RequestOption = func(*http.Request)

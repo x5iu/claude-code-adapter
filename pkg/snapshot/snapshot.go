@@ -31,6 +31,7 @@ type Snapshot struct {
 	RequestID          string                                  `json:"request_id"`
 	StatusCode         int                                     `json:"status_code"`
 	Provider           string                                  `json:"provider"`
+	Profile            string                                  `json:"profile,omitempty"`
 	Config             *Config                                 `json:"config,omitempty"`
 	Error              *Error                                  `json:"error,omitempty"`
 	AnthropicRequest   *anthropic.GenerateMessageRequest       `json:"anthropic_request,omitempty"`

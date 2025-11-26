@@ -1,11 +1,6 @@
 # Claude Code Adapter configuration template
 # See CLI flags in cmd/claude-code-adapter-cli/serve.go for equivalents.
 
-# Default upstream provider.
-# Values: "openrouter" (default) or "anthropic".
-# Note: Requests with server tools or interleaved thinking may force "anthropic" regardless of this setting.
-provider: "openrouter"
-
 # Snapshot recorder configuration.
 # Format: "<scheme>:<path>". Supported: "jsonl:<file>" to append JSON Lines snapshots of requests/responses.
 # Empty string disables recording.
@@ -18,63 +13,217 @@ http:
   # Port to listen on
   port: 2194
 
-options:
-  # Enable strict JSON Schema for tools and tighter validations during conversion.
-  # For OpenRouter, this sets function.parameters.strict.
-  strict: false
-  # Prevent empty text in tool_result by replacing it with "(No content)".
-  # Some providers (like OpenAI) may reject empty content in tool results.
-  prevent_empty_text_tool_result: false
-  reasoning:
-    # Default reasoning detail format when not overridden per-model.
-    # "anthropic-claude-v1" for Anthropic-style reasoning; "openai-responses-v1" for OpenAI Responses v1;
-    # "google-gemini-v1" for Google Gemini reasoning (reasoning is mandatory and always enabled).
-    format: "anthropic-claude-v1"
-    # Default effort for OpenAI Responses v1 reasoning (if not specified via model suffix).
-    # One of: "", "minimal", "low", "medium", "high".
-    effort: "medium"
-    # Delimiter used to join/split encrypted reasoning signature id and data when converting formats.
-    delimiter: "/"
-  # Optional mapping from client-facing model id to OpenRouter model slug.
-  # Used to rewrite Anthropic model names to OpenRouter equivalents.
-  models:
-    # Claude 4.1 Sonnet
-    claude-sonnet-4-20250514: "anthropic/claude-sonnet-4"
-    # Claude 4.1 Opus
-    claude-opus-4-1-20250805: "anthropic/claude-opus-4.1"
-  # Scaling factor applied when reporting token usage in streams to the client.
-  # 1.0 = no change; <1.0 reduces counts to account for context differences.
-  context_window_resize_factor: 0.6
-  # Skip the preflight /v1/messages/count_tokens request when true (reduces latency, avoids extra API call).
-  disable_count_tokens_request: false
+# Profiles configuration
+# Each profile defines a complete configuration for a set of models.
+# Models are matched using prefix patterns (e.g., "claude-*" matches all Claude models).
+# When a request comes in, the adapter finds the first matching profile for the model.
+# If no profile matches, a 400 error is returned.
+profiles:
+  # Profile for Claude models using Anthropic provider
+  - name: "anthropic-claude"
+    # Model patterns to match (supports "*" suffix for prefix matching)
+    models:
+      - "claude-*"
+    # Upstream provider: "openrouter" or "anthropic"
+    # Note: Requests with server tools or interleaved thinking will force "anthropic" regardless of this setting.
+    provider: "anthropic"
 
-anthropic:
-  # Send the exact raw request body to Anthropic without re-marshalling (useful for pass-through/debugging).
-  use_raw_request_body: true
-  # Bypass conversion and forward the incoming Messages API request directly to Anthropic when true.
-  enable_pass_through_mode: false
-  # Never enable interleaved thinking even if thinking budget exceeds max_tokens when true.
-  disable_interleaved_thinking: false
-  # Remove 'blocked_domains' from the web_search tool schema before count_tokens to avoid unsupported fields.
-  disable_web_search_blocked_domains: false
-  # Force thinking to be enabled (with large MaxTokens) for Anthropic-style reasoning on OpenRouter targets when needed.
-  force_thinking: false
-  # Anthropic API base URL.
-  base_url: "https://api.anthropic.com"
-  # Anthropic API version header.
-  version: "2023-06-01"
+    options:
+      # Enable strict JSON Schema for tools and tighter validations during conversion.
+      # For OpenRouter, this sets function.parameters.strict.
+      strict: false
+      # Prevent empty text in tool_result by replacing it with "(No content)".
+      # Some providers (like OpenAI) may reject empty content in tool results.
+      prevent_empty_text_tool_result: false
+      reasoning:
+        # Default reasoning detail format when not overridden per-model.
+        # "anthropic-claude-v1" for Anthropic-style reasoning; "openai-responses-v1" for OpenAI Responses v1;
+        # "google-gemini-v1" for Google Gemini reasoning (reasoning is mandatory and always enabled).
+        format: "anthropic-claude-v1"
+        # Default effort for OpenAI Responses v1 reasoning (if not specified via model suffix).
+        # One of: "", "minimal", "low", "medium", "high".
+        effort: "medium"
+        # Delimiter used to join/split encrypted reasoning signature id and data when converting formats.
+        delimiter: "/"
+      # Optional mapping from client-facing model id to OpenRouter model slug.
+      # Used to rewrite Anthropic model names to OpenRouter equivalents.
+      models: {}
+      # Scaling factor applied when reporting token usage in streams to the client.
+      # 1.0 = no change; <1.0 reduces counts to account for context differences.
+      context_window_resize_factor: 1.0
+      # Skip the preflight /v1/messages/count_tokens request when true (reduces latency, avoids extra API call).
+      disable_count_tokens_request: false
 
-openrouter:
-  # OpenRouter API base URL.
-  base_url: "https://openrouter.ai/api"
-  # Per-model override for reasoning detail format; falls back to options.reasoning.format.
-  model_reasoning_format:
-    anthropic/claude-sonnet-4: "anthropic-claude-v1"
-    openai/gpt-5: "openai-responses-v1"
-    google/gemini-3-flash-thinking: "google-gemini-v1"
-  # Provider preference for OpenRouter routing.
-  # Acts as both allowed list and priority order; the adapter sets both Order and Only to this list and allows fallbacks.
-  allowed_providers:
-    - "anthropic"
-    - "google-vertex"
-    - "amazon-bedrock"
+    anthropic:
+      # API key for Anthropic (use ${ENV_VAR} syntax for environment variables)
+      api_key: "${ANTHROPIC_API_KEY}"
+      # Send the exact raw request body to Anthropic without re-marshalling (useful for pass-through/debugging).
+      use_raw_request_body: true
+      # Bypass conversion and forward the incoming Messages API request directly to Anthropic when true.
+      enable_pass_through_mode: false
+      # Never enable interleaved thinking even if thinking budget exceeds max_tokens when true.
+      disable_interleaved_thinking: false
+      # Remove 'blocked_domains' from the web_search tool schema before count_tokens to avoid unsupported fields.
+      disable_web_search_blocked_domains: false
+      # Force thinking to be enabled (with large MaxTokens) for Anthropic-style reasoning on OpenRouter targets when needed.
+      force_thinking: false
+      # Anthropic API base URL.
+      base_url: "https://api.anthropic.com"
+      # Anthropic API version header.
+      version: "2023-06-01"
+
+    openrouter:
+      # API key for OpenRouter (use ${ENV_VAR} syntax for environment variables)
+      api_key: "${OPENROUTER_API_KEY}"
+      # OpenRouter API base URL.
+      base_url: "https://openrouter.ai/api"
+      # Per-model override for reasoning detail format; falls back to options.reasoning.format.
+      model_reasoning_format: {}
+      # Provider preference for OpenRouter routing.
+      # Acts as both allowed list and priority order; the adapter sets both Order and Only to this list and allows fallbacks.
+      allowed_providers: []
+
+  # Profile for Claude models using OpenRouter provider (as fallback/alternative)
+  - name: "openrouter-claude"
+    models:
+      - "anthropic/claude-*"
+    provider: "openrouter"
+
+    options:
+      strict: false
+      prevent_empty_text_tool_result: false
+      reasoning:
+        format: "anthropic-claude-v1"
+        effort: "medium"
+        delimiter: "/"
+      models:
+        # Claude 4.1 Sonnet
+        claude-sonnet-4-20250514: "anthropic/claude-sonnet-4"
+        # Claude 4.1 Opus
+        claude-opus-4-1-20250805: "anthropic/claude-opus-4.1"
+      context_window_resize_factor: 0.6
+      disable_count_tokens_request: false
+
+    anthropic:
+      api_key: "${ANTHROPIC_API_KEY}"
+      use_raw_request_body: true
+      enable_pass_through_mode: false
+      disable_interleaved_thinking: false
+      disable_web_search_blocked_domains: false
+      force_thinking: false
+      base_url: "https://api.anthropic.com"
+      version: "2023-06-01"
+
+    openrouter:
+      api_key: "${OPENROUTER_API_KEY}"
+      base_url: "https://openrouter.ai/api"
+      model_reasoning_format:
+        anthropic/claude-sonnet-4: "anthropic-claude-v1"
+      allowed_providers:
+        - "anthropic"
+        - "google-vertex"
+        - "amazon-bedrock"
+
+  # Profile for OpenAI models (GPT-5, etc.)
+  - name: "openrouter-openai"
+    models:
+      - "openai/*"
+      - "gpt-*"
+    provider: "openrouter"
+
+    options:
+      strict: false
+      prevent_empty_text_tool_result: true
+      reasoning:
+        format: "openai-responses-v1"
+        effort: "medium"
+        delimiter: "/"
+      models: {}
+      context_window_resize_factor: 0.6
+      disable_count_tokens_request: false
+
+    anthropic:
+      api_key: "${ANTHROPIC_API_KEY}"
+      use_raw_request_body: true
+      enable_pass_through_mode: false
+      disable_interleaved_thinking: false
+      disable_web_search_blocked_domains: false
+      force_thinking: false
+      base_url: "https://api.anthropic.com"
+      version: "2023-06-01"
+
+    openrouter:
+      api_key: "${OPENROUTER_API_KEY}"
+      base_url: "https://openrouter.ai/api"
+      model_reasoning_format:
+        openai/gpt-5: "openai-responses-v1"
+      allowed_providers: []
+
+  # Profile for Google Gemini models
+  - name: "openrouter-gemini"
+    models:
+      - "google/*"
+      - "gemini-*"
+    provider: "openrouter"
+
+    options:
+      strict: false
+      prevent_empty_text_tool_result: false
+      reasoning:
+        format: "google-gemini-v1"
+        effort: "medium"
+        delimiter: "/"
+      models: {}
+      context_window_resize_factor: 0.6
+      disable_count_tokens_request: false
+
+    anthropic:
+      api_key: "${ANTHROPIC_API_KEY}"
+      use_raw_request_body: true
+      enable_pass_through_mode: false
+      disable_interleaved_thinking: false
+      disable_web_search_blocked_domains: false
+      force_thinking: false
+      base_url: "https://api.anthropic.com"
+      version: "2023-06-01"
+
+    openrouter:
+      api_key: "${OPENROUTER_API_KEY}"
+      base_url: "https://openrouter.ai/api"
+      model_reasoning_format:
+        google/gemini-3-flash-thinking: "google-gemini-v1"
+      allowed_providers:
+        - "google-vertex"
+
+  # Default catch-all profile (matches any model not matched by previous profiles)
+  - name: "default"
+    models:
+      - "*"
+    provider: "openrouter"
+
+    options:
+      strict: false
+      prevent_empty_text_tool_result: false
+      reasoning:
+        format: "anthropic-claude-v1"
+        effort: "medium"
+        delimiter: "/"
+      models: {}
+      context_window_resize_factor: 0.6
+      disable_count_tokens_request: false
+
+    anthropic:
+      api_key: "${ANTHROPIC_API_KEY}"
+      use_raw_request_body: true
+      enable_pass_through_mode: false
+      disable_interleaved_thinking: false
+      disable_web_search_blocked_domains: false
+      force_thinking: false
+      base_url: "https://api.anthropic.com"
+      version: "2023-06-01"
+
+    openrouter:
+      api_key: "${OPENROUTER_API_KEY}"
+      base_url: "https://openrouter.ai/api"
+      model_reasoning_format: {}
+      allowed_providers: []
