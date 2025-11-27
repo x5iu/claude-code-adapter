@@ -31,6 +31,7 @@ type OptionsConfig struct {
 	ContextWindowResizeFactor  float64           `yaml:"context_window_resize_factor" json:"context_window_resize_factor" mapstructure:"context_window_resize_factor"`
 	DisableCountTokensRequest  bool              `yaml:"disable_count_tokens_request" json:"disable_count_tokens_request" mapstructure:"disable_count_tokens_request"`
 	MinMaxTokens               int               `yaml:"min_max_tokens" json:"min_max_tokens" mapstructure:"min_max_tokens"`
+	DisallowedTools            []string          `yaml:"disallowed_tools" json:"disallowed_tools" mapstructure:"disallowed_tools"`
 }
 
 // ReasoningConfig contains options for reasoning/thinking mode.

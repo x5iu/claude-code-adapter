@@ -39,6 +39,8 @@ profiles:
       # Minimum value for max_tokens. If the request's max_tokens is less than this value,
       # it will be raised to this minimum. Set to 0 to disable (default).
       min_max_tokens: 0
+      # List of tool names to disallow for this profile. Matching tools will be removed before request dispatch.
+      disallowed_tools: []
       reasoning:
         # Default reasoning detail format when not overridden per-model.
         # "anthropic-claude-v1" for Anthropic-style reasoning; "openai-responses-v1" for OpenAI Responses v1;
