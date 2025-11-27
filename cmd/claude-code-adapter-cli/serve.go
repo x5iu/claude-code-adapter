@@ -29,6 +29,7 @@ import (
 
 	"github.com/x5iu/claude-code-adapter/pkg/adapter"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
+	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openai"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
 	"github.com/x5iu/claude-code-adapter/pkg/profile"
 	"github.com/x5iu/claude-code-adapter/pkg/provider"
@@ -41,6 +42,7 @@ import (
 const (
 	ProviderAnthropic  = "anthropic"
 	ProviderOpenRouter = "openrouter"
+	ProviderOpenAI     = "openai"
 )
 
 func newServeCommand() *cobra.Command {
@@ -480,6 +482,41 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 			}
 		} else {
 			switch ccProvider {
+			case ProviderOpenAI:
+				sn.Provider = ProviderOpenAI
+				slog.Info(fmt.Sprintf("[%d] using provider %q", requestID, ProviderOpenAI))
+				w.Header().Set("X-Provider", ProviderOpenAI)
+				openaiRequest := adapter.ConvertAnthropicRequestToOpenAIRequest(ctx, req)
+				sn.OpenAIRequest = openaiRequest
+				oaiStream, header, err := prov.CreateOpenAIModelResponse(ctx, openaiRequest)
+				responseBuilder := openai.NewResponseBuilder()
+				defer func() {
+					sn.ResponseHeader = snapshot.Header(header)
+					sn.OpenAIResponse = responseBuilder.Build()
+				}()
+				if err != nil {
+					slog.Error(fmt.Sprintf("[%d] error making OpenAI Responses request: %s", requestID, err.Error()))
+					if providerError, isProviderError := provider.ParseError(err); isProviderError {
+						respondError(w, providerError.StatusCode(), providerError.Message())
+						sn.Error = &snapshot.Error{
+							Message: providerError.Message(),
+							Type:    providerError.Type(),
+							Source:  providerError.Source(),
+						}
+						sn.StatusCode = providerError.StatusCode()
+					} else {
+						respondError(w, http.StatusInternalServerError, err.Error())
+						sn.Error = &snapshot.Error{Message: err.Error()}
+						sn.StatusCode = http.StatusInternalServerError
+					}
+					return
+				}
+				stream = adapter.ConvertOpenAIStreamToAnthropicStream(
+					ctx,
+					oaiStream,
+					adapter.WithInputTokens(inputTokens),
+					adapter.ExtractOpenAIResponseBuilder(responseBuilder),
+				)
 			case ProviderOpenRouter:
 				fallthrough
 			default:
@@ -715,6 +752,11 @@ func profileToSnapshotConfig(p *profile.Profile) *snapshot.Config {
 			BaseURL:              p.OpenRouter.BaseURL,
 			ModelReasoningFormat: p.OpenRouter.ModelReasoningFormat,
 			AllowedProviders:     p.OpenRouter.AllowedProviders,
+		}
+	}
+	if p.OpenAI != nil {
+		cfg.OpenAI = &snapshot.OpenAIConfig{
+			BaseURL: p.OpenAI.BaseURL,
 		}
 	}
 	return cfg

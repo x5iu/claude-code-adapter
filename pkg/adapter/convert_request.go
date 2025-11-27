@@ -11,6 +11,7 @@ import (
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openai"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
 	"github.com/x5iu/claude-code-adapter/pkg/profile"
+	"github.com/x5iu/claude-code-adapter/pkg/utils"
 )
 
 type ConvertRequestOptions struct {
@@ -551,20 +552,48 @@ func getOpenRouterModelReasoningFormat(
 }
 
 func ConvertAnthropicRequestToOpenAIRequest(
+	ctx context.Context,
 	src *anthropic.GenerateMessageRequest,
 	options ...ConvertRequestOption,
 ) (dst *openai.CreateModelResponseRequest) {
+	prof, _ := profile.FromContext(ctx)
 	convertOptions := &ConvertRequestOptions{}
 	for _, applyOption := range options {
 		applyOption(convertOptions)
 	}
 	dst = &openai.CreateModelResponseRequest{
-		Instructions: convertAnthropicSystemContentToOpenAIInstruction(src.System),
-		Model:        src.Model,
+		Instructions:    convertAnthropicSystemContentToOpenAIInstruction(src.System),
+		Model:           src.Model,
+		MaxOutputTokens: lo.ToPtr(src.MaxTokens),
+		Temperature:     lo.ToPtr(src.Temperature),
+		TopP:            src.TopP,
 	}
-	if modelMapper := viper.GetStringMapString(delimiter.ViperKey("options", "models")); modelMapper != nil {
+	// Model name mapping from configuration
+	if modelMapper := prof.Options.GetModels(); modelMapper != nil {
 		if targetModel, ok := modelMapper[dst.Model]; ok {
 			dst.Model = targetModel
+		}
+	}
+	// Convert messages to input items
+	dst.Input = convertAnthropicMessagesToOpenAIInput(src.Messages)
+	// Convert tools
+	if len(src.Tools) > 0 {
+		dst.Tools = make([]*openai.ResponseToolParam, 0, len(src.Tools))
+		for _, srcTool := range src.Tools {
+			if dstTool := convertAnthropicToolToOpenAITool(prof, srcTool); dstTool != nil {
+				dst.Tools = append(dst.Tools, dstTool)
+			}
+		}
+	}
+	// Convert tool choice
+	if srcToolChoice := src.ToolChoice; srcToolChoice != nil {
+		dst.ToolChoice = convertAnthropicToolChoiceToOpenAIToolChoice(srcToolChoice)
+		dst.ParallelToolCalls = lo.ToPtr(!srcToolChoice.DisableParallelToolUse)
+	}
+	// Convert thinking/reasoning
+	if thinking := src.Thinking; thinking != nil && thinking.Type == anthropic.ThinkingTypeEnabled {
+		dst.Reasoning = &openai.ResponseReasoning{
+			Effort: openai.ResponseReasoningEffort(prof.Options.GetReasoningEffort()),
 		}
 	}
 	return dst
@@ -573,65 +602,225 @@ func ConvertAnthropicRequestToOpenAIRequest(
 func convertAnthropicSystemContentToOpenAIInstruction(
 	src anthropic.MessageContents,
 ) (dst string) {
-	for _, srcContent := range src {
-		if srcContent.Type != anthropic.MessageContentTypeText {
-			panic("anthropic system message content should be text, reference: https://docs.claude.com/en/api/messages#body-system-type")
-		}
+	if len(src) == 0 {
+		return ""
 	}
 	var instruction strings.Builder
 	for _, srcContent := range src {
+		if srcContent.Type != anthropic.MessageContentTypeText {
+			// OpenAI instructions only support text, skip non-text content
+			continue
+		}
 		instruction.WriteString(srcContent.Text)
 		instruction.WriteString("\n\n")
 	}
-	return instruction.String()
+	return strings.TrimSpace(instruction.String())
 }
 
-func convertAnthropicMessageToOpenAIInputItem(
-	src *anthropic.Message,
-) (dst *openai.ResponseInputItemParam) {
-	dst = &openai.ResponseInputItemParam{}
-	switch src.Role {
-	case anthropic.MessageRoleUser:
-		for _, srcContent := range src.Content {
-			switch srcContent.Type {
-			case anthropic.MessageContentTypeText:
-				dst.Message = &openai.ResponseMessage{
-					Type:    openai.ResponseInputItemTypeMessage,
-					Role:    openai.ResponseMessageRoleUser,
-					Content: openai.NewTextContent(srcContent.Text),
-				}
-			case anthropic.MessageContentTypeImage:
-				if srcImage := srcContent.Source; srcImage != nil {
-					dst.Message = &openai.ResponseMessage{
-						Type: openai.ResponseInputItemTypeMessage,
-						Role: openai.ResponseMessageRoleUser,
-						Content: openai.ResponseMessageContents{
-							&openai.ResponseMessageContent{
-								Image: &openai.ResponseMessageContentImage{
-									Type:     openai.ResponseMessageContentTypeInputImage,
-									ImageUrl: fmt.Sprintf("data:%s;%s,%s", srcImage.MediaType, srcImage.Type, srcImage.Data),
-									Detail:   openai.ResponseMessageContentImageDetailAuto,
-								},
-							},
-						},
-					}
-				}
-			case anthropic.MessageContentTypeToolResult:
-			}
-		}
-	case anthropic.MessageRoleAssistant:
-		for _, srcContent := range src.Content {
-			switch srcContent.Type {
-			case anthropic.MessageContentTypeText:
-				dst.Message = &openai.ResponseMessage{
-					Type:    openai.ResponseInputItemTypeMessage,
-					Role:    openai.ResponseMessageRoleAssistant,
-					Content: openai.NewTextContent(srcContent.Text),
-				}
-			case anthropic.MessageContentTypeToolUse:
-			case anthropic.MessageContentTypeThinking:
-			}
-		}
+func convertAnthropicMessagesToOpenAIInput(
+	srcMessages []*anthropic.Message,
+) (dst openai.ResponseInputParam) {
+	dst = make(openai.ResponseInputParam, 0, len(srcMessages)*2) // estimate capacity
+	for _, srcMessage := range srcMessages {
+		items := convertAnthropicMessageToOpenAIInputItems(srcMessage)
+		dst = append(dst, items...)
 	}
 	return dst
+}
+
+func convertAnthropicMessageToOpenAIInputItems(
+	src *anthropic.Message,
+) (dst []*openai.ResponseInputItemParam) {
+	dst = make([]*openai.ResponseInputItemParam, 0, len(src.Content))
+	var role openai.ResponseMessageRole
+	switch src.Role {
+	case anthropic.MessageRoleUser:
+		role = openai.ResponseMessageRoleUser
+	case anthropic.MessageRoleAssistant:
+		role = openai.ResponseMessageRoleAssistant
+	}
+	// Collect text and image content into a single message
+	var messageContents openai.ResponseMessageContents
+	for _, srcContent := range src.Content {
+		switch srcContent.Type {
+		case anthropic.MessageContentTypeText:
+			var textType openai.ResponseMessageContentType
+			if role == openai.ResponseMessageRoleUser {
+				textType = openai.ResponseMessageContentTypeInputText
+			} else {
+				textType = openai.ResponseMessageContentTypeOutputText
+			}
+			messageContents = append(messageContents, &openai.ResponseMessageContent{
+				Text: &openai.ResponseMessageContentText{
+					Type: textType,
+					Text: srcContent.Text,
+				},
+			})
+		case anthropic.MessageContentTypeImage:
+			if srcImage := srcContent.Source; srcImage != nil {
+				messageContents = append(messageContents, &openai.ResponseMessageContent{
+					Image: &openai.ResponseMessageContentImage{
+						Type:     openai.ResponseMessageContentTypeInputImage,
+						ImageUrl: fmt.Sprintf("data:%s;%s,%s", srcImage.MediaType, srcImage.Type, srcImage.Data),
+						Detail:   openai.ResponseMessageContentImageDetailAuto,
+					},
+				})
+			}
+		case anthropic.MessageContentTypeToolUse:
+			// Flush pending message content first
+			if len(messageContents) > 0 {
+				dst = append(dst, &openai.ResponseInputItemParam{
+					Message: &openai.ResponseMessage{
+						Type:    openai.ResponseInputItemTypeMessage,
+						Role:    role,
+						Content: messageContents,
+					},
+				})
+				messageContents = nil
+			}
+			// Add function call
+			dst = append(dst, &openai.ResponseInputItemParam{
+				FunctionCall: &openai.ResponseFunctionToolCallParam{
+					Type:      openai.ResponseInputItemTypeFunctionCall,
+					ID:        srcContent.ID,
+					CallID:    srcContent.ID,
+					Name:      srcContent.Name,
+					Arguments: string(srcContent.Input),
+					Status:    openai.ResponseStatusCompleted,
+				},
+			})
+		case anthropic.MessageContentTypeToolResult:
+			// Flush pending message content first
+			if len(messageContents) > 0 {
+				dst = append(dst, &openai.ResponseInputItemParam{
+					Message: &openai.ResponseMessage{
+						Type:    openai.ResponseInputItemTypeMessage,
+						Role:    role,
+						Content: messageContents,
+					},
+				})
+				messageContents = nil
+			}
+			// Add function call output
+			output := convertAnthropicToolResultToOpenAIFunctionOutput(srcContent)
+			output.CallID = srcContent.ToolUseID
+			dst = append(dst, &openai.ResponseInputItemParam{
+				FunctionCallOutput: output,
+			})
+		case anthropic.MessageContentTypeThinking:
+			// Flush pending message content first
+			if len(messageContents) > 0 {
+				dst = append(dst, &openai.ResponseInputItemParam{
+					Message: &openai.ResponseMessage{
+						Type:    openai.ResponseInputItemTypeMessage,
+						Role:    role,
+						Content: messageContents,
+					},
+				})
+				messageContents = nil
+			}
+			// Add reasoning item
+			dst = append(dst, &openai.ResponseInputItemParam{
+				Reasoning: &openai.ResponseReasoningItem{
+					Type:   openai.ResponseInputItemTypeReasoningItem,
+					ID:     utils.GenerateID("rs"),
+					Status: openai.ResponseStatusCompleted,
+					Summary: &openai.ResponseReasoningContent{
+						Type: openai.ResponseReasoningTypeSummaryText,
+						Text: srcContent.Thinking,
+					},
+				},
+			})
+		case anthropic.MessageContentTypeRedactedThinking:
+			// Skip redacted thinking
+		}
+	}
+	// Flush any remaining message content
+	if len(messageContents) > 0 {
+		dst = append(dst, &openai.ResponseInputItemParam{
+			Message: &openai.ResponseMessage{
+				Type:    openai.ResponseInputItemTypeMessage,
+				Role:    role,
+				Content: messageContents,
+			},
+		})
+	}
+	return dst
+}
+
+func convertAnthropicToolResultToOpenAIFunctionOutput(
+	src *anthropic.MessageContent,
+) *openai.ResponseFunctionCallOutput {
+	output := &openai.ResponseFunctionCallOutput{
+		Type:   openai.ResponseInputItemTypeFunctionCallOutput,
+		Status: openai.ResponseStatusCompleted,
+	}
+	if src.Content != nil {
+		var sb strings.Builder
+		for _, content := range src.Content {
+			if content.Type == anthropic.MessageContentTypeText {
+				if sb.Len() > 0 {
+					sb.WriteString("\n")
+				}
+				sb.WriteString(content.Text)
+			}
+		}
+		output.Output = sb.String()
+	}
+	return output
+}
+
+func convertAnthropicToolToOpenAITool(
+	prof *profile.Profile,
+	src *anthropic.Tool,
+) *openai.ResponseToolParam {
+	var srcToolType anthropic.ToolType
+	if src.Type == nil {
+		srcToolType = anthropic.ToolTypeCustom
+	} else {
+		srcToolType = *src.Type
+	}
+	switch srcToolType {
+	case anthropic.ToolTypeCustom:
+		return &openai.ResponseToolParam{
+			Function: &openai.ResponseFunctionToolParam{
+				Type:        openai.ResponseToolCallTypeFunction,
+				Name:        src.Name,
+				Description: src.Description,
+				Strict:      prof.Options.GetStrict(),
+				Parameters:  openai.ResponseJSONSchemaObject(src.InputSchema),
+			},
+		}
+	default:
+		// Skip non-custom tools (server tools, etc.)
+		return nil
+	}
+}
+
+func convertAnthropicToolChoiceToOpenAIToolChoice(
+	src *anthropic.ToolChoice,
+) *openai.ResponseToolChoice {
+	switch src.Type {
+	case anthropic.ToolChoiceTypeAuto:
+		return &openai.ResponseToolChoice{
+			Option: openai.ChatCompletionToolChoiceOptionAuto,
+		}
+	case anthropic.ToolChoiceTypeNone:
+		return &openai.ResponseToolChoice{
+			Option: openai.ChatCompletionToolChoiceOptionNone,
+		}
+	case anthropic.ToolChoiceTypeAny:
+		return &openai.ResponseToolChoice{
+			Option: openai.ChatCompletionToolChoiceOptionRequired,
+		}
+	case anthropic.ToolChoiceTypeTool:
+		return &openai.ResponseToolChoice{
+			Function: &openai.ResponseToolChoiceFunctionParam{
+				Type: openai.ResponseToolChoiceTypeFunction,
+				Name: src.Name,
+			},
+		}
+	default:
+		return nil
+	}
 }
