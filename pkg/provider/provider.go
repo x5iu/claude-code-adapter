@@ -50,7 +50,7 @@ type Provider interface {
 
 	// CreateOpenAIModelResponse POST retry=2 options(opts) {{ get_config .ctx "openai" "base_url" }}/v1/responses
 	// Content-Type: application/json
-	// Authorization: Bearer {{ get_config "openai" "api_key" }}
+	// Authorization: Bearer {{ get_config .ctx "openai" "api_key" }}
 	//
 	// {{ json_encode .req }}
 	CreateOpenAIModelResponse(

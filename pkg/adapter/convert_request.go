@@ -729,9 +729,11 @@ func convertAnthropicMessageToOpenAIInputItems(
 					Type:   openai.ResponseInputItemTypeReasoningItem,
 					ID:     utils.GenerateID("rs"),
 					Status: openai.ResponseStatusCompleted,
-					Summary: &openai.ResponseReasoningContent{
-						Type: openai.ResponseReasoningTypeSummaryText,
-						Text: srcContent.Thinking,
+					Summary: []*openai.ResponseReasoningContent{
+						{
+							Type: openai.ResponseReasoningTypeSummaryText,
+							Text: srcContent.Thinking,
+						},
 					},
 				},
 			})
