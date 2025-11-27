@@ -728,12 +728,12 @@ type ResponseFunctionCallOutput struct {
 }
 
 type ResponseReasoningItem struct {
-	ID               string                    `json:"id"`
-	Type             ResponseInputItemType     `json:"type"`
-	Summary          *ResponseReasoningContent `json:"summary"`
-	Content          *ResponseReasoningContent `json:"content,omitempty"`
-	Status           ResponseStatus            `json:"status"`
-	EncryptedContent string                    `json:"encrypted_content,omitempty"`
+	ID               string                      `json:"id"`
+	Type             ResponseInputItemType       `json:"type"`
+	Summary          []*ResponseReasoningContent `json:"summary"`
+	Content          []*ResponseReasoningContent `json:"content,omitempty"`
+	Status           ResponseStatus              `json:"status"`
+	EncryptedContent string                      `json:"encrypted_content,omitempty"`
 }
 
 type ResponseReasoningContent struct {
