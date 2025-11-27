@@ -231,6 +231,51 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 		matchedProfileConfig = profileToSnapshotConfig(prof)
 		// Inject profile into request context
 		ctx := profile.WithProfile(r.Context(), prof)
+		// Remove disallowed tools as early as possible (ingress filtering)
+		if len(req.Tools) > 0 {
+			// Build a disallowed tool name set from profile options
+			disallowedSet := map[string]struct{}{}
+			for _, name := range prof.Options.GetDisallowedTools() {
+				if name == "" {
+					continue
+				}
+				disallowedSet[name] = struct{}{}
+			}
+			if len(disallowedSet) > 0 {
+				filtered := make([]*anthropic.Tool, 0, len(req.Tools))
+				removed := make([]string, 0)
+				for _, t := range req.Tools {
+					if _, blocked := disallowedSet[t.Name]; blocked {
+						removed = append(removed, t.Name)
+						continue
+					}
+					filtered = append(filtered, t)
+				}
+				if len(removed) > 0 {
+					slog.Info(fmt.Sprintf("[%d] removed disallowed tools: %s", requestID, strings.Join(removed, ",")))
+				}
+				req.Tools = filtered
+				// Normalize tool_choice if necessary
+				if len(req.Tools) == 0 {
+					if req.ToolChoice == nil {
+						req.ToolChoice = &anthropic.ToolChoice{Type: anthropic.ToolChoiceTypeNone}
+					} else {
+						req.ToolChoice.Type = anthropic.ToolChoiceTypeNone
+						req.ToolChoice.Name = ""
+					}
+				} else if req.ToolChoice != nil && req.ToolChoice.Type == anthropic.ToolChoiceTypeTool {
+					// Ensure selected tool still exists after filtering
+					remaining := map[string]struct{}{}
+					for _, t := range req.Tools {
+						remaining[t.Name] = struct{}{}
+					}
+					if _, ok := remaining[req.ToolChoice.Name]; !ok {
+						req.ToolChoice.Type = anthropic.ToolChoiceTypeNone
+						req.ToolChoice.Name = ""
+					}
+				}
+			}
+		}
 		var (
 			inputTokens  int64
 			outputTokens int64

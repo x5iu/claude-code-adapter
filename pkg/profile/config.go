@@ -148,6 +148,7 @@ func loadOptionsConfig(v *viper.Viper, key string) *OptionsConfig {
 		ContextWindowResizeFactor:  v.GetFloat64(delimiter.ViperKey(key, "context_window_resize_factor")),
 		DisableCountTokensRequest:  v.GetBool(delimiter.ViperKey(key, "disable_count_tokens_request")),
 		MinMaxTokens:               v.GetInt(delimiter.ViperKey(key, "min_max_tokens")),
+		DisallowedTools:            v.GetStringSlice(delimiter.ViperKey(key, "disallowed_tools")),
 	}
 }
 
@@ -277,6 +278,14 @@ func (o *OptionsConfig) GetMinMaxTokens() int {
 		return 0
 	}
 	return o.MinMaxTokens
+}
+
+// GetDisallowedTools safely gets the disallowed tools list.
+func (o *OptionsConfig) GetDisallowedTools() []string {
+	if o == nil || o.DisallowedTools == nil {
+		return []string{}
+	}
+	return o.DisallowedTools
 }
 
 // GetBaseURL safely gets the Anthropic base URL with a default.
