@@ -147,6 +147,7 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 		version        = cmd.Parent().Version
 	)
 	return func(w http.ResponseWriter, r *http.Request) {
+		var matchedProfileConfig *snapshot.Config
 		sn := &snapshot.Snapshot{
 			RequestTime: time.Now(),
 			Version:     version,
@@ -157,9 +158,8 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 			go func() {
 				sn.FinishTime = time.Now()
 				sn.RequestHeader = snapshot.Header(r.Header)
-				if err := viper.Unmarshal(&sn.Config); err != nil {
-					slog.Warn(fmt.Sprintf("[%d] error unmarshalling config: %s", requestID, err.Error()))
-				}
+				// record matched profile config instead of global config
+				sn.Config = matchedProfileConfig
 				if err := rec.Record(sn); err != nil {
 					slog.Warn(fmt.Sprintf("[%d] error recording snapshot: %s", requestID, err.Error()))
 				}
@@ -228,6 +228,7 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 		}
 		slog.Info(fmt.Sprintf("[%d] matched profile: %s (provider=%s)", requestID, prof.Name, prof.Provider))
 		sn.Profile = prof.Name
+		matchedProfileConfig = profileToSnapshotConfig(prof)
 		// Inject profile into request context
 		ctx := profile.WithProfile(r.Context(), prof)
 		var (
@@ -550,6 +551,49 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 		slog.Debug(fmt.Sprintf(">>>>>>>>>>>>>>>>> [%d] anthropic response >>>>>>>>>>>>>>>>>", requestID) + "\n" + string(rawBytes))
 		slog.Debug(fmt.Sprintf("<<<<<<<<<<<<<<<<< [%d] anthropic response <<<<<<<<<<<<<<<<<", requestID))
 	}
+}
+
+func profileToSnapshotConfig(p *profile.Profile) *snapshot.Config {
+	if p == nil {
+		return nil
+	}
+	cfg := &snapshot.Config{Provider: p.Provider}
+	if p.Options != nil {
+		cfg.Options = &snapshot.OptionsConfig{
+			Strict:                     p.Options.Strict,
+			PreventEmptyTextToolResult: p.Options.PreventEmptyTextToolResult,
+			Models:                     p.Options.Models,
+			ContextWindowResizeFactor:  p.Options.ContextWindowResizeFactor,
+			DisableCountTokensRequest:  p.Options.DisableCountTokensRequest,
+			MinMaxTokens:               p.Options.MinMaxTokens,
+		}
+		if p.Options.Reasoning != nil {
+			cfg.Options.Reasoning = &snapshot.ReasoningConfig{
+				Format:    p.Options.Reasoning.Format,
+				Effort:    p.Options.Reasoning.Effort,
+				Delimiter: p.Options.Reasoning.Delimiter,
+			}
+		}
+	}
+	if p.Anthropic != nil {
+		cfg.Anthropic = &snapshot.AnthropicConfig{
+			UseRawRequestBody:              p.Anthropic.UseRawRequestBody,
+			EnablePassThroughMode:          p.Anthropic.EnablePassThroughMode,
+			DisableInterleavedThinking:     p.Anthropic.DisableInterleavedThinking,
+			DisableWebSearchBlockedDomains: p.Anthropic.DisableWebSearchBlockedDomains,
+			ForceThinking:                  p.Anthropic.ForceThinking,
+			BaseURL:                        p.Anthropic.BaseURL,
+			Version:                        p.Anthropic.Version,
+		}
+	}
+	if p.OpenRouter != nil {
+		cfg.OpenRouter = &snapshot.OpenRouterConfig{
+			BaseURL:              p.OpenRouter.BaseURL,
+			ModelReasoningFormat: p.OpenRouter.ModelReasoningFormat,
+			AllowedProviders:     p.OpenRouter.AllowedProviders,
+		}
+	}
+	return cfg
 }
 
 func respondError(w http.ResponseWriter, status int, message string) {
