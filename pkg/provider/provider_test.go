@@ -14,7 +14,7 @@ import (
 	"github.com/x5iu/claude-code-adapter/pkg/profile"
 )
 
-// testCtxFromEnv 构造带有 Profile 的 ctx，优先使用环境变量，未设置时使用默认 BASE_URL
+// testCtxFromEnv constructs a ctx with Profile, preferring environment variables; uses default BASE_URL if not set
 func testCtxFromEnv(t *testing.T) context.Context {
 	t.Helper()
 	anthropicBase := os.Getenv("ANTHROPIC_BASE_URL")
@@ -546,7 +546,7 @@ func TestCreateOpenRouterChatCompletion_CachedTokensAcrossRequests(t *testing.T)
 	provider := NewProvider()
 	ctx := testCtxFromEnv(t)
 	mkReq := func() *openrouter.CreateChatCompletionRequest {
-		lp := strings.Repeat("这是一段用于缓存测试的长提示。", 500)
+		lp := strings.Repeat("This is a long prompt for cache testing.", 500)
 		return &openrouter.CreateChatCompletionRequest{
 			Model: "anthropic/claude-sonnet-4",
 			Messages: []*openrouter.ChatCompletionMessage{
@@ -595,7 +595,7 @@ func TestCreateOpenRouterChatCompletion_CachedTokensAcrossRequests(t *testing.T)
 	}
 	t.Logf("cached_tokens first=%d second=%d", first, second)
 	if second == 0 && first == 0 {
-		t.Skipf("provider did not report cached_tokens; first=%d second=%d", first, second)
+		t.Fatalf("provider did not report cached_tokens; first=%d second=%d", first, second)
 	}
 	if second < first {
 		t.Fatalf("expected cached tokens to be non-decreasing, got first=%d second=%d", first, second)
