@@ -3,15 +3,44 @@ package provider
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/samber/lo"
-	"github.com/spf13/viper"
 
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
+	"github.com/x5iu/claude-code-adapter/pkg/profile"
 )
+
+// testCtxFromEnv 构造带有 Profile 的 ctx，优先使用环境变量，未设置时使用默认 BASE_URL
+func testCtxFromEnv(t *testing.T) context.Context {
+	t.Helper()
+	anthropicBase := os.Getenv("ANTHROPIC_BASE_URL")
+	if anthropicBase == "" {
+		anthropicBase = "https://api.anthropic.com"
+	}
+	openrouterBase := os.Getenv("OPENROUTER_BASE_URL")
+	if openrouterBase == "" {
+		openrouterBase = "https://openrouter.ai/api"
+	}
+	p := &profile.Profile{
+		Name:     "test",
+		Models:   []string{"*"},
+		Provider: "openrouter",
+		Anthropic: &profile.AnthropicConfig{
+			BaseURL: anthropicBase,
+			APIKey:  os.Getenv("ANTHROPIC_API_KEY"),
+			Version: "",
+		},
+		OpenRouter: &profile.OpenRouterConfig{
+			BaseURL: openrouterBase,
+			APIKey:  os.Getenv("OPENROUTER_API_KEY"),
+		},
+	}
+	return profile.WithProfile(context.Background(), p)
+}
 
 func TestNewProvider(t *testing.T) {
 	provider := NewProvider()
@@ -27,13 +56,8 @@ func TestNewProvider(t *testing.T) {
 }
 
 func TestCreateOpenRouterChatCompletion_ClaudeThinking(t *testing.T) {
-	// Skip test if no API key is provided
-	if viper.GetString("openrouter.api_key") == "" {
-		t.Skip("OPENROUTER_API_KEY not set, skipping integration test")
-	}
-
 	provider := NewProvider()
-	ctx := context.Background()
+	ctx := testCtxFromEnv(t)
 
 	// Create test request for Claude 3.7 Sonnet Thinking model
 	req := &openrouter.CreateChatCompletionRequest{
@@ -100,13 +124,8 @@ func TestCreateOpenRouterChatCompletion_ClaudeThinking(t *testing.T) {
 }
 
 func TestCreateOpenRouterChatCompletion_DataFormat(t *testing.T) {
-	// Skip test if no API key is provided
-	if viper.GetString("openrouter.api_key") == "" {
-		t.Skip("OPENROUTER_API_KEY not set, skipping integration test")
-	}
-
 	provider := NewProvider()
-	ctx := context.Background()
+	ctx := testCtxFromEnv(t)
 
 	req := &openrouter.CreateChatCompletionRequest{
 		Model: "anthropic/claude-3.7-sonnet:thinking",
@@ -170,13 +189,8 @@ func TestCreateOpenRouterChatCompletion_DataFormat(t *testing.T) {
 }
 
 func TestCreateOpenRouterChatCompletion_WithProviderPreference(t *testing.T) {
-	// Skip test if no API key is provided
-	if viper.GetString("openrouter.api_key") == "" {
-		t.Skip("OPENROUTER_API_KEY not set, skipping integration test")
-	}
-
 	provider := NewProvider()
-	ctx := context.Background()
+	ctx := testCtxFromEnv(t)
 
 	// Create provider preference to only use Anthropic models
 	providerPref := &openrouter.ProviderPreference{
@@ -260,16 +274,11 @@ func TestCreateOpenRouterChatCompletion_WithProviderPreference(t *testing.T) {
 }
 
 func TestGenerateAnthropicMessage_Basic(t *testing.T) {
-	// Skip test if no API key is provided
-	if viper.GetString("anthropic.api_key") == "" {
-		t.Skip("ANTHROPIC_API_KEY not set, skipping integration test")
-	}
-
 	provider := NewProvider()
-	ctx := context.Background()
+	ctx := testCtxFromEnv(t)
 
 	req := &anthropic.GenerateMessageRequest{
-		Model: "claude-3-5-sonnet-20241022",
+		Model: "claude-sonnet-4-20250514",
 		Messages: []*anthropic.Message{
 			{
 				Role: anthropic.MessageRoleUser,
@@ -347,13 +356,8 @@ func TestGenerateAnthropicMessage_Basic(t *testing.T) {
 }
 
 func TestGenerateAnthropicMessage_Thinking(t *testing.T) {
-	// Skip test if no API key is provided
-	if viper.GetString("anthropic.api_key") == "" {
-		t.Skip("ANTHROPIC_API_KEY not set, skipping integration test")
-	}
-
 	provider := NewProvider()
-	ctx := context.Background()
+	ctx := testCtxFromEnv(t)
 
 	// Use a question that should trigger thinking
 	req := &anthropic.GenerateMessageRequest{
@@ -449,13 +453,8 @@ func TestGenerateAnthropicMessage_Thinking(t *testing.T) {
 }
 
 func TestCreateOpenRouterChatCompletion_ReasoningValidation(t *testing.T) {
-	// Skip test if no API key is provided
-	if viper.GetString("openrouter.api_key") == "" {
-		t.Skip("OPENROUTER_API_KEY not set, skipping integration test")
-	}
-
 	provider := NewProvider()
-	ctx := context.Background()
+	ctx := testCtxFromEnv(t)
 
 	// Use a question that should trigger reasoning
 	req := &openrouter.CreateChatCompletionRequest{
@@ -544,11 +543,8 @@ func TestCreateOpenRouterChatCompletion_ReasoningValidation(t *testing.T) {
 
 // validateChatCompletionChunk validates the structure of a ChatCompletionChunk
 func TestCreateOpenRouterChatCompletion_CachedTokensAcrossRequests(t *testing.T) {
-	if viper.GetString("openrouter.api_key") == "" {
-		t.Skip("OPENROUTER_API_KEY not set, skipping integration test")
-	}
 	provider := NewProvider()
-	ctx := context.Background()
+	ctx := testCtxFromEnv(t)
 	mkReq := func() *openrouter.CreateChatCompletionRequest {
 		lp := strings.Repeat("这是一段用于缓存测试的长提示。", 500)
 		return &openrouter.CreateChatCompletionRequest{
@@ -778,16 +774,11 @@ func validateAnthropicEvent(t *testing.T, event anthropic.Event) {
 }
 
 func TestCountAnthropicTokens_Basic(t *testing.T) {
-	// Skip test if no API key is provided
-	if viper.GetString("anthropic.api_key") == "" {
-		t.Skip("ANTHROPIC_API_KEY not set, skipping integration test")
-	}
-
 	provider := NewProvider()
-	ctx := context.Background()
+	ctx := testCtxFromEnv(t)
 
 	req := &anthropic.CountTokensRequest{
-		Model: "claude-3-5-sonnet-20241022",
+		Model: "claude-sonnet-4-20250514",
 		Messages: []*anthropic.Message{
 			{
 				Role: anthropic.MessageRoleUser,
@@ -832,16 +823,11 @@ func TestCountAnthropicTokens_Basic(t *testing.T) {
 }
 
 func TestCountAnthropicTokens_WithSystem(t *testing.T) {
-	// Skip test if no API key is provided
-	if viper.GetString("anthropic.api_key") == "" {
-		t.Skip("ANTHROPIC_API_KEY not set, skipping integration test")
-	}
-
 	provider := NewProvider()
-	ctx := context.Background()
+	ctx := testCtxFromEnv(t)
 
 	req := &anthropic.CountTokensRequest{
-		Model:  "claude-3-5-sonnet-20241022",
+		Model:  "claude-sonnet-4-20250514",
 		System: anthropic.MessageContents{{Type: anthropic.MessageContentTypeText, Text: "You are a helpful assistant that provides concise answers."}},
 		Messages: []*anthropic.Message{
 			{
@@ -876,13 +862,8 @@ func TestCountAnthropicTokens_WithSystem(t *testing.T) {
 }
 
 func TestCountAnthropicTokens_WithThinking(t *testing.T) {
-	// Skip test if no API key is provided
-	if viper.GetString("anthropic.api_key") == "" {
-		t.Skip("ANTHROPIC_API_KEY not set, skipping integration test")
-	}
-
 	provider := NewProvider()
-	ctx := context.Background()
+	ctx := testCtxFromEnv(t)
 
 	req := &anthropic.CountTokensRequest{
 		Model: "claude-sonnet-4-20250514",
@@ -922,13 +903,8 @@ func TestCountAnthropicTokens_WithThinking(t *testing.T) {
 }
 
 func TestCountAnthropicTokens_InvalidModel(t *testing.T) {
-	// Skip test if no API key is provided
-	if viper.GetString("anthropic.api_key") == "" {
-		t.Skip("ANTHROPIC_API_KEY not set, skipping integration test")
-	}
-
 	provider := NewProvider()
-	ctx := context.Background()
+	ctx := testCtxFromEnv(t)
 
 	req := &anthropic.CountTokensRequest{
 		Model: "invalid-model-name",
@@ -968,16 +944,11 @@ func TestCountAnthropicTokens_InvalidModel(t *testing.T) {
 }
 
 func TestCountAnthropicTokens_EmptyMessages(t *testing.T) {
-	// Skip test if no API key is provided
-	if viper.GetString("anthropic.api_key") == "" {
-		t.Skip("ANTHROPIC_API_KEY not set, skipping integration test")
-	}
-
 	provider := NewProvider()
-	ctx := context.Background()
+	ctx := testCtxFromEnv(t)
 
 	req := &anthropic.CountTokensRequest{
-		Model:    "claude-3-5-sonnet-20241022",
+		Model:    "claude-sonnet-4-20250514",
 		Messages: []*anthropic.Message{}, // Empty messages
 	}
 

@@ -10,6 +10,7 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+    environment: Test
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -36,3 +37,5 @@ jobs:
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENROUTER_BASE_URL: ${{ secrets.OPENROUTER_BASE_URL }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
