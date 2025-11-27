@@ -562,7 +562,6 @@ func ConvertAnthropicRequestToOpenAIRequest(
 		applyOption(convertOptions)
 	}
 	dst = &openai.CreateModelResponseRequest{
-		Instructions:    convertAnthropicSystemContentToOpenAIInstruction(src.System),
 		Model:           src.Model,
 		MaxOutputTokens: lo.ToPtr(src.MaxTokens),
 		Temperature:     lo.ToPtr(src.Temperature),
@@ -574,8 +573,16 @@ func ConvertAnthropicRequestToOpenAIRequest(
 			dst.Model = targetModel
 		}
 	}
-	// Convert messages to input items
-	dst.Input = convertAnthropicMessagesToOpenAIInput(src.Messages)
+	// Convert system messages: if all text, use instructions; otherwise, use input with system role
+	systemInput := convertAnthropicSystemContentToOpenAI(src.System)
+	if systemInput != nil {
+		// Contains non-text content, prepend to input
+		dst.Input = append(openai.ResponseInputParam{systemInput}, convertAnthropicMessagesToOpenAIInput(src.Messages)...)
+	} else {
+		// All text content, use instructions
+		dst.Instructions = convertAnthropicSystemContentToOpenAIInstruction(src.System)
+		dst.Input = convertAnthropicMessagesToOpenAIInput(src.Messages)
+	}
 	// Convert tools
 	if len(src.Tools) > 0 {
 		dst.Tools = make([]*openai.ResponseToolParam, 0, len(src.Tools))
@@ -597,6 +604,61 @@ func ConvertAnthropicRequestToOpenAIRequest(
 		}
 	}
 	return dst
+}
+
+// convertAnthropicSystemContentToOpenAI checks if system content contains non-text content (like images).
+// If it does, returns an input item with system role containing all content.
+// If all content is text, returns nil (caller should use convertAnthropicSystemContentToOpenAIInstruction instead).
+func convertAnthropicSystemContentToOpenAI(
+	src anthropic.MessageContents,
+) *openai.ResponseInputItemParam {
+	if len(src) == 0 {
+		return nil
+	}
+	// Check if there's any non-text content
+	hasNonTextContent := false
+	for _, srcContent := range src {
+		if srcContent.Type != anthropic.MessageContentTypeText {
+			hasNonTextContent = true
+			break
+		}
+	}
+	if !hasNonTextContent {
+		return nil
+	}
+	// Convert to system message with all content types
+	messageContents := make(openai.ResponseMessageContents, 0, len(src))
+	for _, srcContent := range src {
+		switch srcContent.Type {
+		case anthropic.MessageContentTypeText:
+			messageContents = append(messageContents, &openai.ResponseMessageContent{
+				Text: &openai.ResponseMessageContentText{
+					Type: openai.ResponseMessageContentTypeInputText,
+					Text: srcContent.Text,
+				},
+			})
+		case anthropic.MessageContentTypeImage:
+			if srcImage := srcContent.Source; srcImage != nil {
+				messageContents = append(messageContents, &openai.ResponseMessageContent{
+					Image: &openai.ResponseMessageContentImage{
+						Type:     openai.ResponseMessageContentTypeInputImage,
+						ImageUrl: fmt.Sprintf("data:%s;%s,%s", srcImage.MediaType, srcImage.Type, srcImage.Data),
+						Detail:   openai.ResponseMessageContentImageDetailAuto,
+					},
+				})
+			}
+		}
+	}
+	if len(messageContents) == 0 {
+		return nil
+	}
+	return &openai.ResponseInputItemParam{
+		Message: &openai.ResponseMessage{
+			Type:    openai.ResponseInputItemTypeMessage,
+			Role:    openai.ResponseMessageRoleSystem,
+			Content: messageContents,
+		},
+	}
 }
 
 func convertAnthropicSystemContentToOpenAIInstruction(
