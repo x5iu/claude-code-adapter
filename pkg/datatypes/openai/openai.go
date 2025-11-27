@@ -359,7 +359,14 @@ func (c *ResponseMessageContents) UnmarshalJSON(data []byte) error {
 			*c = NewTextContent(text)
 			return nil
 		case '[':
-			return json.Unmarshal(data, &c)
+			// Use a type alias to avoid infinite recursion
+			type rawContents []*ResponseMessageContent
+			var contents rawContents
+			if err := json.Unmarshal(data, &contents); err != nil {
+				return err
+			}
+			*c = ResponseMessageContents(contents)
+			return nil
 		default:
 			return errors.New("message content should be a string or an array")
 		}
