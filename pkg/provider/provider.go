@@ -48,7 +48,7 @@ type Provider interface {
 		opts ...RequestOption,
 	) (*anthropic.Usage, error)
 
-	// CreateOpenAIModelResponse POST retry=2 options(opts) {{ get_config .ctx "openai" "base_url" }}/responses
+	// CreateOpenAIModelResponse POST retry=2 options(opts) {{ get_config .ctx "openai" "base_url" }}/v1/responses
 	// Content-Type: application/json
 	// Authorization: Bearer {{ get_config "openai" "api_key" }}
 	//
