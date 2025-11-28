@@ -2,6 +2,8 @@ package utils
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -34,6 +36,14 @@ func IsContentType(header http.Header, contentType string) bool {
 		}
 	}
 	return headerContentType == contentType
+}
+
+// GenerateID generates a random ID with the given prefix.
+// Format: prefix_<12 random hex characters>
+func GenerateID(prefix string) string {
+	b := make([]byte, 6)
+	rand.Read(b)
+	return prefix + "_" + hex.EncodeToString(b)
 }
 
 // The following variables and functions are copied from github.com/gin-gonic/gin@v1.10.1/recovery.go

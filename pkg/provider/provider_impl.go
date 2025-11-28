@@ -14,6 +14,7 @@ import (
 	"text/template"
 
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
+	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openai"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
 	"github.com/x5iu/claude-code-adapter/pkg/utils"
 	__rt "github.com/x5iu/defc/runtime"
@@ -23,6 +24,7 @@ const (
 	ProviderMethodMakeAnthropicMessagesRequest   = "MakeAnthropicMessagesRequest"
 	ProviderMethodGenerateAnthropicMessage       = "GenerateAnthropicMessage"
 	ProviderMethodCountAnthropicTokens           = "CountAnthropicTokens"
+	ProviderMethodCreateOpenAIModelResponse      = "CreateOpenAIModelResponse"
 	ProviderMethodCreateOpenRouterChatCompletion = "CreateOpenRouterChatCompletion"
 )
 
@@ -39,6 +41,8 @@ var (
 	headerProviderTmplGenerateAnthropicMessage       = template.Must(template.New("HeaderGenerateAnthropicMessage").Funcs(template.FuncMap{"get_config": getConfigFromContext, "json_encode": utils.JSONEncode}).Parse("Content-Type: application/json\r\nX-API-Key: {{ get_config .ctx \"anthropic\" \"api_key\" }}\r\nAnthropic-Version: {{ get_config .ctx \"anthropic\" \"version\" }}\r\n\r\n{{ json_encode .req }}"))
 	addrProviderTmplCountAnthropicTokens             = template.Must(template.New("AddressCountAnthropicTokens").Funcs(template.FuncMap{"get_config": getConfigFromContext, "json_encode": utils.JSONEncode}).Parse("{{ get_config .ctx \"anthropic\" \"base_url\" }}/v1/messages/count_tokens"))
 	headerProviderTmplCountAnthropicTokens           = template.Must(template.New("HeaderCountAnthropicTokens").Funcs(template.FuncMap{"get_config": getConfigFromContext, "json_encode": utils.JSONEncode}).Parse("Content-Type: application/json\r\nX-API-Key: {{ get_config .ctx \"anthropic\" \"api_key\" }}\r\nAnthropic-Version: {{ get_config .ctx \"anthropic\" \"version\" }}\r\n\r\n{{ json_encode .req }}"))
+	addrProviderTmplCreateOpenAIModelResponse        = template.Must(template.New("AddressCreateOpenAIModelResponse").Funcs(template.FuncMap{"get_config": getConfigFromContext, "json_encode": utils.JSONEncode}).Parse("{{ get_config .ctx \"openai\" \"base_url\" }}/v1/responses"))
+	headerProviderTmplCreateOpenAIModelResponse      = template.Must(template.New("HeaderCreateOpenAIModelResponse").Funcs(template.FuncMap{"get_config": getConfigFromContext, "json_encode": utils.JSONEncode}).Parse("Content-Type: application/json\r\nAuthorization: Bearer {{ get_config .ctx \"openai\" \"api_key\" }}\r\n\r\n{{ json_encode .req }}"))
 	addrProviderTmplCreateOpenRouterChatCompletion   = template.Must(template.New("AddressCreateOpenRouterChatCompletion").Funcs(template.FuncMap{"get_config": getConfigFromContext, "json_encode": utils.JSONEncode}).Parse("{{ get_config .ctx \"openrouter\" \"base_url\" }}/v1/chat/completions"))
 	headerProviderTmplCreateOpenRouterChatCompletion = template.Must(template.New("HeaderCreateOpenRouterChatCompletion").Funcs(template.FuncMap{"get_config": getConfigFromContext, "json_encode": utils.JSONEncode}).Parse("Content-Type: application/json\r\nAuthorization: Bearer {{ get_config .ctx \"openrouter\" \"api_key\" }}\r\n\r\n{{ json_encode .req }}"))
 )
@@ -433,6 +437,132 @@ func (__imp *implProvider) __CountAnthropicTokens(ctx context.Context, req *anth
 	}
 
 	return v0CountAnthropicTokens, nil
+}
+
+func (__imp *implProvider) CreateOpenAIModelResponse(ctx context.Context, req *openai.CreateModelResponseRequest, opts ...RequestOption) (openai.ResponseStream, http.Header, error) {
+	__maxRetry := 2
+
+	__retryCount := 0
+__RETRY:
+	var (
+		v0CreateOpenAIModelResponse  openai.ResponseStream
+		v1CreateOpenAIModelResponse  http.Header
+		errCreateOpenAIModelResponse error
+	)
+
+	v0CreateOpenAIModelResponse, v1CreateOpenAIModelResponse, errCreateOpenAIModelResponse = __imp.__CreateOpenAIModelResponse(ctx, req, opts...)
+	if errCreateOpenAIModelResponse != nil {
+		if __retryCount < __maxRetry {
+			if __getResponse, ok := errCreateOpenAIModelResponse.(__rt.FutureResponseError); ok {
+				__getResponse.Response().Body.Close()
+			}
+			__retryCount++
+			goto __RETRY
+		}
+	}
+	return v0CreateOpenAIModelResponse, v1CreateOpenAIModelResponse, errCreateOpenAIModelResponse
+}
+
+func (__imp *implProvider) __CreateOpenAIModelResponse(ctx context.Context, req *openai.CreateModelResponseRequest, opts ...RequestOption) (openai.ResponseStream, http.Header, error) {
+
+	addrCreateOpenAIModelResponse := __rt.GetBuffer()
+	defer __rt.PutBuffer(addrCreateOpenAIModelResponse)
+	defer addrCreateOpenAIModelResponse.Reset()
+
+	headerCreateOpenAIModelResponse := __rt.GetBuffer()
+	defer __rt.PutBuffer(headerCreateOpenAIModelResponse)
+	defer headerCreateOpenAIModelResponse.Reset()
+
+	var (
+		v0CreateOpenAIModelResponse = __rt.New[openai.ResponseStream]()
+		v1CreateOpenAIModelResponse = __rt.New[http.Header]()
+	)
+
+	var (
+		errCreateOpenAIModelResponse          error
+		httpResponseCreateOpenAIModelResponse *http.Response
+		responseCreateOpenAIModelResponse     __rt.FutureResponse = __imp.responseHandler()
+	)
+
+	if errCreateOpenAIModelResponse = addrProviderTmplCreateOpenAIModelResponse.Execute(addrCreateOpenAIModelResponse, map[string]any{
+		"ctx":  ctx,
+		"req":  req,
+		"opts": opts,
+	}); errCreateOpenAIModelResponse != nil {
+		return v0CreateOpenAIModelResponse, v1CreateOpenAIModelResponse, fmt.Errorf("error building 'CreateOpenAIModelResponse' url: %w", errCreateOpenAIModelResponse)
+	}
+
+	if errCreateOpenAIModelResponse = headerProviderTmplCreateOpenAIModelResponse.Execute(headerCreateOpenAIModelResponse, map[string]any{
+		"ctx":  ctx,
+		"req":  req,
+		"opts": opts,
+	}); errCreateOpenAIModelResponse != nil {
+		return v0CreateOpenAIModelResponse, v1CreateOpenAIModelResponse, fmt.Errorf("error building 'CreateOpenAIModelResponse' header: %w", errCreateOpenAIModelResponse)
+	}
+	bufReaderCreateOpenAIModelResponse := bufio.NewReader(headerCreateOpenAIModelResponse)
+	mimeHeaderCreateOpenAIModelResponse, errCreateOpenAIModelResponse := textproto.NewReader(bufReaderCreateOpenAIModelResponse).ReadMIMEHeader()
+	if errCreateOpenAIModelResponse != nil {
+		return v0CreateOpenAIModelResponse, v1CreateOpenAIModelResponse, fmt.Errorf("error reading 'CreateOpenAIModelResponse' header: %w", errCreateOpenAIModelResponse)
+	}
+
+	urlCreateOpenAIModelResponse := addrCreateOpenAIModelResponse.String()
+	requestBodyCreateOpenAIModelResponse, errCreateOpenAIModelResponse := io.ReadAll(bufReaderCreateOpenAIModelResponse)
+	if errCreateOpenAIModelResponse != nil {
+		return v0CreateOpenAIModelResponse, v1CreateOpenAIModelResponse, fmt.Errorf("error reading 'CreateOpenAIModelResponse' request body: %w", errCreateOpenAIModelResponse)
+	}
+	requestCreateOpenAIModelResponse, errCreateOpenAIModelResponse := http.NewRequestWithContext(ctx, "POST", urlCreateOpenAIModelResponse, bytes.NewReader(requestBodyCreateOpenAIModelResponse))
+	if errCreateOpenAIModelResponse != nil {
+		return v0CreateOpenAIModelResponse, v1CreateOpenAIModelResponse, fmt.Errorf("error building 'CreateOpenAIModelResponse' request: %w", errCreateOpenAIModelResponse)
+	}
+
+	for kCreateOpenAIModelResponse, vvCreateOpenAIModelResponse := range mimeHeaderCreateOpenAIModelResponse {
+		for _, vCreateOpenAIModelResponse := range vvCreateOpenAIModelResponse {
+			requestCreateOpenAIModelResponse.Header.Add(kCreateOpenAIModelResponse, vCreateOpenAIModelResponse)
+		}
+	}
+
+	requestCreateOpenAIModelResponse.Header.Add("Accept-Encoding", "gzip")
+
+	for _, opt := range opts {
+		if opt != nil {
+			opt(requestCreateOpenAIModelResponse)
+		}
+	}
+
+	httpResponseCreateOpenAIModelResponse, errCreateOpenAIModelResponse = http.DefaultClient.Do(requestCreateOpenAIModelResponse)
+
+	if errCreateOpenAIModelResponse != nil {
+		return v0CreateOpenAIModelResponse, v1CreateOpenAIModelResponse, fmt.Errorf("error sending 'CreateOpenAIModelResponse' request: %w", errCreateOpenAIModelResponse)
+	}
+
+	func() {
+		for _, contentEncoding := range httpResponseCreateOpenAIModelResponse.Header.Values("Content-Encoding") {
+			if commaIndex := strings.IndexByte(contentEncoding, ','); commaIndex >= 0 {
+				contentEncoding = contentEncoding[:commaIndex]
+			}
+			if strings.TrimSpace(contentEncoding) == "gzip" {
+				httpResponseCreateOpenAIModelResponse.Body = &__rt.GzipReadCloser{R: httpResponseCreateOpenAIModelResponse.Body}
+				return
+			}
+		}
+	}()
+
+	if errCreateOpenAIModelResponse = responseCreateOpenAIModelResponse.FromResponse("CreateOpenAIModelResponse", httpResponseCreateOpenAIModelResponse); errCreateOpenAIModelResponse != nil {
+		return v0CreateOpenAIModelResponse, v1CreateOpenAIModelResponse, fmt.Errorf("error converting 'CreateOpenAIModelResponse' response: %w", errCreateOpenAIModelResponse)
+	}
+
+	addrCreateOpenAIModelResponse.Reset()
+	headerCreateOpenAIModelResponse.Reset()
+
+	if errCreateOpenAIModelResponse = responseCreateOpenAIModelResponse.Err(); errCreateOpenAIModelResponse != nil {
+		return v0CreateOpenAIModelResponse, v1CreateOpenAIModelResponse, fmt.Errorf("error returned from 'CreateOpenAIModelResponse' response: %w", errCreateOpenAIModelResponse)
+	}
+
+	if errCreateOpenAIModelResponse = responseCreateOpenAIModelResponse.ScanValues(&v0CreateOpenAIModelResponse, &v1CreateOpenAIModelResponse); errCreateOpenAIModelResponse != nil {
+		return v0CreateOpenAIModelResponse, v1CreateOpenAIModelResponse, fmt.Errorf("error scanning value from 'CreateOpenAIModelResponse' response: %w", errCreateOpenAIModelResponse)
+	}
+
+	return v0CreateOpenAIModelResponse, v1CreateOpenAIModelResponse, nil
 }
 
 func (__imp *implProvider) CreateOpenRouterChatCompletion(ctx context.Context, req *openrouter.CreateChatCompletionRequest, opts ...RequestOption) (openrouter.ChatCompletionStream, http.Header, error) {

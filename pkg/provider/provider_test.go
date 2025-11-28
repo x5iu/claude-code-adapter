@@ -10,6 +10,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
+	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openai"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
 	"github.com/x5iu/claude-code-adapter/pkg/profile"
 )
@@ -25,6 +26,10 @@ func testCtxFromEnv(t *testing.T) context.Context {
 	if openrouterBase == "" {
 		openrouterBase = "https://openrouter.ai/api"
 	}
+	openaiBase := os.Getenv("OPENAI_BASE_URL")
+	if openaiBase == "" {
+		openaiBase = "https://api.openai.com"
+	}
 	p := &profile.Profile{
 		Name:     "test",
 		Models:   []string{"*"},
@@ -37,6 +42,10 @@ func testCtxFromEnv(t *testing.T) context.Context {
 		OpenRouter: &profile.OpenRouterConfig{
 			BaseURL: openrouterBase,
 			APIKey:  os.Getenv("OPENROUTER_API_KEY"),
+		},
+		OpenAI: &profile.OpenAIConfig{
+			BaseURL: openaiBase,
+			APIKey:  os.Getenv("OPENAI_API_KEY"),
 		},
 	}
 	return profile.WithProfile(context.Background(), p)
@@ -981,4 +990,353 @@ func truncateString(s string, maxLength int) string {
 		return s
 	}
 	return s[:maxLength] + "..."
+}
+
+func TestCreateOpenAIModelResponse_Basic(t *testing.T) {
+	provider := NewProvider()
+	ctx := testCtxFromEnv(t)
+
+	req := &openai.CreateModelResponseRequest{
+		Model: "gpt-4o",
+		Input: openai.TextInput("Hello, how are you?"),
+	}
+
+	// Call the OpenAI API
+	stream, header, err := provider.CreateOpenAIModelResponse(ctx, req)
+	if err != nil {
+		t.Fatalf("CreateOpenAIModelResponse failed: %v", err)
+	}
+
+	// Verify header is not nil
+	if header == nil {
+		t.Fatal("HTTP header is nil")
+	}
+
+	// Process the stream and verify event format
+	var events []openai.Event
+	var hasContent bool
+	var hasResponseCreated bool
+	var hasResponseCompleted bool
+
+	for event, streamErr := range stream {
+		if streamErr != nil {
+			t.Fatalf("Stream error: %v", streamErr)
+		}
+
+		if event == nil {
+			t.Fatal("Received nil event")
+		}
+
+		// Validate event structure
+		validateOpenAIEvent(t, event)
+		events = append(events, event)
+
+		// Check event types
+		switch event.EventType() {
+		case openai.EventTypeResponseCreated:
+			hasResponseCreated = true
+		case openai.EventTypeResponseCompleted:
+			hasResponseCompleted = true
+		case openai.EventTypeResponseOutputTextDelta:
+			hasContent = true
+		}
+	}
+
+	// Verify we received events
+	if len(events) == 0 {
+		t.Fatal("No events received from stream")
+	}
+
+	// Verify we received expected event types
+	if !hasResponseCreated {
+		t.Error("Did not receive response.created event")
+	}
+
+	if !hasResponseCompleted {
+		t.Error("Did not receive response.completed event")
+	}
+
+	if !hasContent {
+		t.Error("Did not receive text content events")
+	}
+
+	t.Logf("Successfully received %d events from OpenAI API", len(events))
+}
+
+func TestCreateOpenAIModelResponse_DataFormat(t *testing.T) {
+	provider := NewProvider()
+	ctx := testCtxFromEnv(t)
+
+	req := &openai.CreateModelResponseRequest{
+		Model: "gpt-4o",
+		Input: openai.TextInput("What is 2+2?"),
+	}
+
+	stream, header, err := provider.CreateOpenAIModelResponse(ctx, req)
+	if err != nil {
+		t.Fatalf("API call failed: %v", err)
+	}
+
+	if header == nil {
+		t.Fatal("Header should not be nil")
+	}
+
+	// Use ResponseBuilder to validate the complete response structure
+	builder := openai.NewResponseBuilder()
+
+	for event, streamErr := range stream {
+		if streamErr != nil {
+			t.Fatalf("Stream error: %v", streamErr)
+		}
+
+		// Validate event format
+		validateOpenAIEvent(t, event)
+
+		// Add to builder
+		builder.Add(event)
+	}
+
+	// Build final response and validate
+	response := builder.Build()
+	validateOpenAIResponse(t, response)
+
+	t.Logf("Response ID: %s, Model: %s, Status: %s", response.ID, response.Model, response.Status)
+}
+
+func TestCreateOpenAIModelResponse_WithReasoning(t *testing.T) {
+	provider := NewProvider()
+	ctx := testCtxFromEnv(t)
+
+	// Use a question that should trigger reasoning with o1/o3 models
+	req := &openai.CreateModelResponseRequest{
+		Model: "o3-mini",
+		Input: openai.TextInput("Think step by step: If I have 15 apples and I give away 7, then buy 3 more, how many apples do I have?"),
+		Reasoning: &openai.ResponseReasoning{
+			Effort:  openai.ResponseReasoningEffortMedium,
+			Summary: openai.ResponseReasoningSummaryAuto,
+		},
+	}
+
+	stream, header, err := provider.CreateOpenAIModelResponse(ctx, req)
+	if err != nil {
+		t.Fatalf("CreateOpenAIModelResponse with reasoning failed: %v", err)
+	}
+
+	if header == nil {
+		t.Fatal("Header should not be nil")
+	}
+
+	var events []openai.Event
+	var hasReasoningContent bool
+	var hasTextContent bool
+	var reasoningDeltas []string
+	var textDeltas []string
+
+	for event, streamErr := range stream {
+		if streamErr != nil {
+			t.Fatalf("Stream error: %v", streamErr)
+		}
+
+		validateOpenAIEvent(t, event)
+		events = append(events, event)
+
+		// Check for reasoning and text content
+		switch e := event.(type) {
+		case *openai.ResponseReasoningTextDeltaEvent:
+			if e.Delta != "" {
+				hasReasoningContent = true
+				reasoningDeltas = append(reasoningDeltas, e.Delta)
+				t.Logf("Received reasoning delta: %q", truncateString(e.Delta, 50))
+			}
+		case *openai.ResponseReasoningSummaryTextDeltaEvent:
+			if e.Delta != "" {
+				hasReasoningContent = true
+				reasoningDeltas = append(reasoningDeltas, e.Delta)
+				t.Logf("Received reasoning summary delta: %q", truncateString(e.Delta, 50))
+			}
+		case *openai.ResponseTextDeltaEvent:
+			if e.Delta != "" {
+				hasTextContent = true
+				textDeltas = append(textDeltas, e.Delta)
+			}
+		}
+	}
+
+	// Verify we received events
+	if len(events) == 0 {
+		t.Fatal("No events received from stream")
+	}
+
+	// Verify we received text content (reasoning might not always be exposed)
+	if !hasTextContent {
+		t.Error("Should receive text content")
+	}
+
+	t.Logf("Reasoning validation results:")
+	t.Logf("  - Has reasoning: %v (%d deltas)", hasReasoningContent, len(reasoningDeltas))
+	t.Logf("  - Has text content: %v (%d deltas)", hasTextContent, len(textDeltas))
+
+	if hasReasoningContent && len(reasoningDeltas) > 0 {
+		totalReasoningLength := 0
+		for _, delta := range reasoningDeltas {
+			totalReasoningLength += len(delta)
+		}
+		t.Logf("  - Total reasoning length: %d characters", totalReasoningLength)
+	}
+}
+
+func TestCreateOpenAIModelResponse_FunctionCalls(t *testing.T) {
+	provider := NewProvider()
+	ctx := testCtxFromEnv(t)
+
+	req := &openai.CreateModelResponseRequest{
+		Model: "gpt-4o",
+		Input: openai.TextInput("What's the weather like in San Francisco?"),
+		Tools: []*openai.ResponseToolParam{
+			{
+				Function: &openai.ResponseFunctionToolParam{
+					Type:        openai.ResponseToolCallTypeFunction,
+					Name:        "get_weather",
+					Description: "Get the current weather in a given location",
+					Parameters:  openai.ResponseJSONSchemaObject(`{"type":"object","properties":{"location":{"type":"string","description":"The city and state, e.g. San Francisco, CA"}},"required":["location"]}`),
+				},
+			},
+		},
+		ToolChoice: &openai.ResponseToolChoice{
+			Option: openai.ChatCompletionToolChoiceOptionRequired,
+		},
+	}
+
+	stream, header, err := provider.CreateOpenAIModelResponse(ctx, req)
+	if err != nil {
+		t.Fatalf("CreateOpenAIModelResponse with tools failed: %v", err)
+	}
+
+	if header == nil {
+		t.Fatal("Header should not be nil")
+	}
+
+	var events []openai.Event
+	var hasFunctionCall bool
+	var functionArguments []string
+
+	for event, streamErr := range stream {
+		if streamErr != nil {
+			t.Fatalf("Stream error: %v", streamErr)
+		}
+
+		validateOpenAIEvent(t, event)
+		events = append(events, event)
+
+		// Check for function call events
+		switch e := event.(type) {
+		case *openai.ResponseFunctionCallArgumentsDeltaEvent:
+			if e.Delta != "" {
+				hasFunctionCall = true
+				functionArguments = append(functionArguments, e.Delta)
+			}
+		case *openai.ResponseOutputItemAddedEvent:
+			if e.Item != nil && e.Item.FunctionCall != nil {
+				hasFunctionCall = true
+				t.Logf("Function call added: %s", e.Item.FunctionCall.Name)
+			}
+		}
+	}
+
+	// Verify we received events
+	if len(events) == 0 {
+		t.Fatal("No events received from stream")
+	}
+
+	// Verify we got a function call
+	if !hasFunctionCall {
+		t.Error("Expected function call but none was received")
+	}
+
+	if len(functionArguments) > 0 {
+		fullArgs := strings.Join(functionArguments, "")
+		t.Logf("Function arguments: %s", fullArgs)
+	}
+
+	t.Logf("Successfully received %d events with function call", len(events))
+}
+
+// validateOpenAIEvent validates the structure of an OpenAI Event
+func validateOpenAIEvent(t *testing.T, event openai.Event) {
+	t.Helper()
+
+	if event == nil {
+		t.Error("Event should not be nil")
+		return
+	}
+
+	// Check that event type is valid
+	eventType := event.EventType()
+	switch eventType {
+	case openai.EventTypeResponseCreated,
+		openai.EventTypeResponseInProgress,
+		openai.EventTypeResponseCompleted,
+		openai.EventTypeResponseFailed,
+		openai.EventTypeResponseIncomplete,
+		openai.EventTypeResponseQueued,
+		openai.EventTypeError,
+		openai.EventTypeResponseOutputItemAdded,
+		openai.EventTypeResponseOutputItemDone,
+		openai.EventTypeResponseContentPartAdded,
+		openai.EventTypeResponseContentPartDone,
+		openai.EventTypeResponseOutputTextDelta,
+		openai.EventTypeResponseOutputTextDone,
+		openai.EventTypeResponseReasoningTextDelta,
+		openai.EventTypeResponseReasoningTextDone,
+		openai.EventTypeResponseReasoningSummaryTextDelta,
+		openai.EventTypeResponseReasoningSummaryTextDone,
+		openai.EventTypeResponseReasoningSummaryPartAdded,
+		openai.EventTypeResponseReasoningSummaryPartDone,
+		openai.EventTypeResponseFunctionCallArgumentsDelta,
+		openai.EventTypeResponseFunctionCallArgumentsDone,
+		openai.EventTypeResponseRefusalDelta,
+		openai.EventTypeResponseRefusalDone,
+		openai.EventTypeResponseOutputTextAnnotationAdded:
+		// Valid event type
+	default:
+		t.Logf("Unknown or unhandled event type: %s", eventType)
+	}
+
+	// Validate specific event types
+	switch e := event.(type) {
+	case *openai.ResponseCreatedEvent:
+		if e.Response.ID == "" {
+			t.Error("ResponseCreated event should have a response ID")
+		}
+	case *openai.ResponseCompletedEvent:
+		if e.Response == nil {
+			t.Error("ResponseCompleted event should have a response")
+		}
+	case *openai.ResponseErrorEvent:
+		if e.Message == "" {
+			t.Error("Error event should have a message")
+		}
+	}
+}
+
+// validateOpenAIResponse validates the structure of a complete OpenAI Response
+func validateOpenAIResponse(t *testing.T, response *openai.Response) {
+	t.Helper()
+
+	if response == nil {
+		t.Error("Response should not be nil")
+		return
+	}
+
+	if response.ID == "" {
+		t.Error("Response ID should not be empty")
+	}
+
+	if response.Model == "" {
+		t.Error("Response Model should not be empty")
+	}
+
+	if response.Status == "" {
+		t.Error("Response Status should not be empty")
+	}
 }

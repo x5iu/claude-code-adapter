@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
+	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openai"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
 )
 
@@ -46,6 +47,17 @@ type Provider interface {
 		req *anthropic.CountTokensRequest,
 		opts ...RequestOption,
 	) (*anthropic.Usage, error)
+
+	// CreateOpenAIModelResponse POST retry=2 options(opts) {{ get_config .ctx "openai" "base_url" }}/v1/responses
+	// Content-Type: application/json
+	// Authorization: Bearer {{ get_config .ctx "openai" "api_key" }}
+	//
+	// {{ json_encode .req }}
+	CreateOpenAIModelResponse(
+		ctx context.Context,
+		req *openai.CreateModelResponseRequest,
+		opts ...RequestOption,
+	) (openai.ResponseStream, http.Header, error)
 
 	// CreateOpenRouterChatCompletion POST retry=2 options(opts) {{ get_config .ctx "openrouter" "base_url" }}/v1/chat/completions
 	// Content-Type: application/json

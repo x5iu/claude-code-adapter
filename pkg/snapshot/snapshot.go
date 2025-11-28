@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
+	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openai"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
 )
 
@@ -38,6 +39,8 @@ type Snapshot struct {
 	AnthropicResponse  *anthropic.Message                      `json:"anthropic_response,omitempty"`
 	OpenRouterRequest  *openrouter.CreateChatCompletionRequest `json:"openrouter_request,omitempty"`
 	OpenRouterResponse *openrouter.ChatCompletion              `json:"openrouter_response,omitempty"`
+	OpenAIRequest      *openai.CreateModelResponseRequest      `json:"openai_request,omitempty"`
+	OpenAIResponse     *openai.Response                        `json:"openai_response,omitempty"`
 	RequestHeader      Header                                  `json:"request_header,omitempty"`
 	ResponseHeader     Header                                  `json:"response_header,omitempty"`
 }
@@ -53,6 +56,11 @@ type Config struct {
 	Options    *OptionsConfig    `yaml:"options" json:"options" mapstructure:"options"`
 	Anthropic  *AnthropicConfig  `yaml:"anthropic" json:"anthropic" mapstructure:"anthropic"`
 	OpenRouter *OpenRouterConfig `yaml:"openrouter" json:"openrouter" mapstructure:"openrouter"`
+	OpenAI     *OpenAIConfig     `yaml:"openai" json:"openai" mapstructure:"openai"`
+}
+
+type OpenAIConfig struct {
+	BaseURL string `yaml:"base_url" json:"base_url" mapstructure:"base_url"`
 }
 
 type OptionsConfig struct {
