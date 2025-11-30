@@ -24,6 +24,8 @@ A Go-based proxy server that seamlessly converts between Anthropic's Messages AP
 
 ### Installation
 
+#### Build from Source
+
 ```bash
 # Clone the repository
 git clone https://github.com/x5iu/claude-code-adapter.git
@@ -31,6 +33,58 @@ cd claude-code-adapter
 
 # Build the CLI
 go build -o claude-code-adapter ./cmd/claude-code-adapter-cli
+```
+
+#### Docker
+
+```bash
+# Build Docker image
+docker build -t claude-code-adapter .
+
+# Run with Docker (using environment variables)
+docker run -d \
+  -p 2194:2194 \
+  -e ANTHROPIC_API_KEY="your_anthropic_key" \
+  -e OPENROUTER_API_KEY="your_openrouter_key" \
+  claude-code-adapter
+
+# Run with custom config file
+docker run -d \
+  -p 2194:2194 \
+  -v /path/to/config.yaml:/app/config.yaml \
+  claude-code-adapter serve --config /app/config.yaml
+```
+
+##### Docker Compose
+
+Create a `docker-compose.yml` file:
+
+```yaml
+services:
+  claude-code-adapter:
+    build: .
+    ports:
+      - "2194:2194"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data
+    command: ["serve", "--host", "0.0.0.0", "--config", "/app/config.yaml"]
+```
+
+Create a `.env` file with your API keys:
+
+```bash
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+```
+
+Then run:
+
+```bash
+docker-compose up -d
 ```
 
 ### Basic Usage
