@@ -1,8 +1,8 @@
-# Multi-stage build for claude-code-adapter
-FROM golang:1.24-alpine AS builder
+# Simple single-stage build for claude-code-adapter
+FROM golang:1.24-alpine
 
-# Install git for fetching dependencies
-RUN apk add --no-cache git
+# Install git for fetching dependencies and ca-certificates for HTTPS calls
+RUN apk add --no-cache git ca-certificates && update-ca-certificates
 
 # Set working directory
 WORKDIR /app
@@ -17,26 +17,11 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o claude-code-adapter ./cmd/claude-code-adapter-cli
-
-# Create a minimal runtime image
-FROM alpine:3.21
-
-# Install ca-certificates for HTTPS calls
-RUN apk add --no-ca-certificates && update-ca-certificates
+RUN CGO_ENABLED=0 go build -o claude-code-adapter ./cmd/claude-code-adapter-cli
 
 # Create non-root user
 RUN addgroup -g 1001 -S claude && \
     adduser -u 1001 -S claude -G claude
-
-# Set working directory
-WORKDIR /app
-
-# Copy binary from builder stage
-COPY --from=builder /app/claude-code-adapter .
-
-# Copy config template
-COPY --from=builder /app/config.template.yaml ./config.template.yaml
 
 # Create data directory for snapshots
 RUN mkdir -p /app/data && chown -R claude:claude /app
