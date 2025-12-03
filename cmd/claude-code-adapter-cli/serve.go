@@ -413,13 +413,13 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 				}
 				return
 			}
-			for k, vv := range header {
-				for _, v := range vv {
-					w.Header().Add(k, v)
-				}
-			}
 			if enablePassThroughMode {
 				defer reader.Close()
+				for k, vv := range header {
+					for _, v := range vv {
+						w.Header().Add(k, v)
+					}
+				}
 				w.WriteHeader(http.StatusOK)
 				sn.StatusCode = http.StatusOK
 				var recvBuf bytes.Buffer
