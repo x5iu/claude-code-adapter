@@ -396,11 +396,6 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 				}
 				stream, header, err = prov.GenerateAnthropicMessage(ctx, req, options...)
 			}
-			for k, vv := range header {
-				for _, v := range vv {
-					w.Header().Add(k, v)
-				}
-			}
 			if err != nil {
 				slog.Error(fmt.Sprintf("[%d] error making anthropic /v1/messages request: %s", requestID, err.Error()))
 				if providerError, isProviderError := provider.ParseError(err); isProviderError {
@@ -417,6 +412,11 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 					sn.StatusCode = http.StatusInternalServerError
 				}
 				return
+			}
+			for k, vv := range header {
+				for _, v := range vv {
+					w.Header().Add(k, v)
+				}
 			}
 			if enablePassThroughMode {
 				defer reader.Close()
@@ -676,8 +676,6 @@ func respondError(w http.ResponseWriter, status int, message string) {
 		setRetryHeaders(10)
 		errorType = anthropic.OverloadedError
 	}
-	w.Header().Del("Content-Length")
-	w.Header().Del("Content-Encoding")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(&anthropic.Error{
