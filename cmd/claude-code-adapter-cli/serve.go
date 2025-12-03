@@ -420,6 +420,8 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 						w.Header().Add(k, v)
 					}
 				}
+				w.Header().Del("Content-Length")
+				w.Header().Del("Content-Encoding")
 				w.WriteHeader(http.StatusOK)
 				sn.StatusCode = http.StatusOK
 				var recvBuf bytes.Buffer
