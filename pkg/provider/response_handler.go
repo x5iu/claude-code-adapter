@@ -51,7 +51,7 @@ func (r *ResponseHandler) ScanValues(values ...any) error {
 			return fmt.Errorf("unexpected Content-Type: %s", responseHeader.Get("Content-Type"))
 		}
 		stream := values[0].(*anthropic.MessageStream)
-		*stream = makeAnthropicStream(r.Response.Body)
+		*stream = MakeAnthropicStream(r.Response.Body)
 	case ProviderMethodCreateOpenRouterChatCompletion:
 		if !utils.IsContentType(responseHeader, "text/event-stream") {
 			return fmt.Errorf("unexpected Content-Type: %s", responseHeader.Get("Content-Type"))
@@ -109,7 +109,7 @@ func unmarshalAnthropicEvent[E anthropic.Event](data []byte) (anthropic.Event, e
 	return event, nil
 }
 
-func makeAnthropicStream(r io.ReadCloser) anthropic.MessageStream {
+func MakeAnthropicStream(r io.ReadCloser) anthropic.MessageStream {
 	return func(yieldimpl func(anthropic.Event, error) bool) {
 		defer r.Close()
 		var (
