@@ -676,6 +676,7 @@ func respondError(w http.ResponseWriter, status int, message string) {
 		setRetryHeaders(10)
 		errorType = anthropic.OverloadedError
 	}
+	w.Header().Del("Content-Length")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(&anthropic.Error{
