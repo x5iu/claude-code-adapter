@@ -1,0 +1,32 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Build artifacts
+claude-code-adapter
+*.exe
+
+# Data files
+data/
+*.jsonl
+
+# Documentation (not needed in image)
+*.md
+!README.md
+
+# GitHub
+.github
+
+# Test files
+*_test.go
+testdata/
+
+# Local config (users should mount their own)
+config.yaml
+.env
