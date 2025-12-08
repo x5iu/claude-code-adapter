@@ -424,17 +424,44 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 				w.Header().Del("Content-Encoding")
 				w.WriteHeader(http.StatusOK)
 				sn.StatusCode = http.StatusOK
+				// Copy response to client and capture for parsing
 				var recvBuf bytes.Buffer
 				tee := io.TeeReader(reader, &recvBuf)
 				if _, err := io.Copy(w, tee); err != nil {
 					slog.Warn(fmt.Sprintf("[%d] error sending Anthropic response: %s", requestID, err))
 					sn.Error = &snapshot.Error{Message: err.Error()}
 				}
+				// Parse response to build anthropic.Message for snapshot
+				// Check Content-Type header to determine format
+				if utils.IsContentType(header, "text/event-stream") {
+					// SSE format: use MakeAnthropicStream and MessageBuilder
+					dstMessageBuilder := anthropic.NewMessageBuilder()
+					stream := provider.MakeAnthropicStream(io.NopCloser(&recvBuf))
+					for event, err := range stream {
+						if err != nil {
+							slog.Error(fmt.Sprintf("[%d] error parsing SSE response for snapshot: %s", requestID, err))
+							sn.Error = &snapshot.Error{Message: err.Error()}
+							return
+						}
+						if err = dstMessageBuilder.Add(event); err != nil {
+							slog.Error(fmt.Sprintf("[%d] error building message: %s", requestID, err))
+							sn.Error = &snapshot.Error{Message: err.Error()}
+							return
+						}
+					}
+					sn.AnthropicResponse = dstMessageBuilder.Message()
+				} else if utils.IsContentType(header, "application/json") {
+					// JSON format: unmarshal directly
+					if err := json.Unmarshal(recvBuf.Bytes(), &sn.AnthropicResponse); err != nil {
+						slog.Error(fmt.Sprintf("[%d] error unmarshalling Anthropic response: %s", requestID, err))
+						sn.Error = &snapshot.Error{Message: err.Error()}
+					}
+				} else {
+					slog.Warn(fmt.Sprintf("[%d] unknown Content-Type for snapshot parsing: %s", requestID, header.Get("Content-Type")))
+				}
+				// Log response for debugging (only after parsing to avoid affecting recvBuf)
 				slog.Debug(fmt.Sprintf(">>>>>>>>>>>>>>>>> [%d] anthropic response >>>>>>>>>>>>>>>>>", requestID) + "\n" + recvBuf.String())
 				slog.Debug(fmt.Sprintf("<<<<<<<<<<<<<<<<< [%d] anthropic response <<<<<<<<<<<<<<<<<", requestID))
-				if err := json.Unmarshal(recvBuf.Bytes(), &sn.AnthropicResponse); err != nil {
-					slog.Warn(fmt.Sprintf("[%d] error unmarshalling Anthropic response: %s", requestID, err))
-				}
 				return
 			}
 		} else {
