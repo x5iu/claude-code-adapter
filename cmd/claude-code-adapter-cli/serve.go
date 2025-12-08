@@ -454,9 +454,11 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 						slog.Error(fmt.Sprintf("[%d] error unmarshalling Anthropic response: %s", requestID, err))
 						sn.Error = &snapshot.Error{Message: err.Error()}
 					}
+				} else {
+					slog.Warn(fmt.Sprintf("[%d] unknown Content-Type for snapshot parsing: %s", requestID, header.Get("Content-Type")))
 				}
 				// Log response for debugging (only after parsing to avoid affecting recvBuf)
-				slog.Debug(fmt.Sprintf(">>>>>>>>>>>>>>>>>> [%d] anthropic response >>>>>>>>>>>>>>>>>", requestID) + "\n" + recvBuf.String())
+				slog.Debug(fmt.Sprintf(">>>>>>>>>>>>>>>>> [%d] anthropic response >>>>>>>>>>>>>>>>>", requestID) + "\n" + recvBuf.String())
 				slog.Debug(fmt.Sprintf("<<<<<<<<<<<<<<<<< [%d] anthropic response <<<<<<<<<<<<<<<<<", requestID))
 				return
 			}
