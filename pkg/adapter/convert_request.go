@@ -120,6 +120,8 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 		dst.Reasoning = reasoning
 	}
 	switch format := getOpenRouterModelReasoningFormat(prof, dst.Model); format {
+	case openrouter.ChatCompletionMessageReasoningDetailFormatUnknown:
+		fallthrough
 	case openrouter.ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1:
 		if dst.Reasoning == nil {
 			if prof.Anthropic.GetForceThinking() {
@@ -418,7 +420,8 @@ func canonicalOpenRouterMessages(
 					reasoningDetail.Index = index
 				}
 				switch format := getOpenRouterModelReasoningFormat(prof, model); format {
-				case openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1,
+				case openrouter.ChatCompletionMessageReasoningDetailFormatUnknown,
+					openrouter.ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1,
 					openrouter.ChatCompletionMessageReasoningDetailFormatGoogleGeminiV1:
 					revisedReasoningDetails := make([]*openrouter.ChatCompletionMessageReasoningDetail, 0, len(message.ReasoningDetails))
 					for _, reasoningDetail := range message.ReasoningDetails {

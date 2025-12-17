@@ -2283,3 +2283,295 @@ func TestCanonicalOpenRouterMessages_OpenAIResponsesV1Format(t *testing.T) {
 		t.Errorf("Expected text to be empty, got %q", msg.ReasoningDetails[0].Text)
 	}
 }
+
+// Tests for ChatCompletionMessageReasoningDetailFormatUnknown
+
+func TestConvertAnthropicRequestToOpenRouterRequest_ReasoningFormat_Unknown(t *testing.T) {
+	ctx := testCtxWithReasoningFormat("unknown", "high")
+
+	src := &anthropic.GenerateMessageRequest{
+		Model:     "some-unknown-model",
+		MaxTokens: 500,
+		Thinking: &anthropic.Thinking{
+			Type:         anthropic.ThinkingTypeEnabled,
+			BudgetTokens: 123,
+		},
+		Messages: []*anthropic.Message{},
+	}
+
+	got := ConvertAnthropicRequestToOpenRouterRequest(ctx, src)
+	if got.Reasoning == nil {
+		t.Fatalf("Reasoning is nil")
+	}
+	// Unknown format should behave like AnthropicClaudeV1: keep MaxTokens and clear Effort
+	if got.Reasoning.Effort != "" {
+		t.Errorf("Effort should be cleared for unknown format, got %q", got.Reasoning.Effort)
+	}
+	if got.Reasoning.MaxTokens != 123 {
+		t.Errorf("MaxTokens should remain 123, got %d", got.Reasoning.MaxTokens)
+	}
+}
+
+func TestConvertAnthropicRequestToOpenRouterRequest_Unknown_IgnoreSuffixAndKeepModel(t *testing.T) {
+	ctx := testCtxWithReasoningFormat("unknown", "high")
+
+	src := &anthropic.GenerateMessageRequest{
+		Model:     "some-model:thinking",
+		MaxTokens: 500,
+		Thinking: &anthropic.Thinking{
+			Type:         anthropic.ThinkingTypeEnabled,
+			BudgetTokens: 123,
+		},
+		Messages: []*anthropic.Message{},
+	}
+
+	got := ConvertAnthropicRequestToOpenRouterRequest(ctx, src)
+	if got.Reasoning == nil {
+		t.Fatalf("Reasoning is nil")
+	}
+	// Unknown format behaves like AnthropicClaudeV1: model suffix should NOT be split
+	if got.Model != "some-model:thinking" {
+		t.Errorf("Model should not be split in unknown format, got %q", got.Model)
+	}
+	if got.Reasoning.Effort != "" {
+		t.Errorf("Effort should be cleared, got %q", got.Reasoning.Effort)
+	}
+	if got.Reasoning.MaxTokens != 123 {
+		t.Errorf("MaxTokens should remain 123, got %d", got.Reasoning.MaxTokens)
+	}
+}
+
+func TestForceThinking_UnknownFormat_NoReasoningAddsReasoning(t *testing.T) {
+	ctx := testCtxWithForceThinking("unknown")
+
+	src := &anthropic.GenerateMessageRequest{
+		Model:     "some-unknown-model",
+		MaxTokens: 0,
+		Messages:  []*anthropic.Message{},
+	}
+
+	got := ConvertAnthropicRequestToOpenRouterRequest(ctx, src)
+
+	// Unknown format should behave like AnthropicClaudeV1 with force thinking
+	if got.Reasoning == nil || !got.Reasoning.Enabled {
+		t.Fatalf("force thinking should enable reasoning for unknown format")
+	}
+	if got.MaxTokens == nil || *got.MaxTokens != 32*1024 {
+		t.Errorf("MaxTokens should be set to 32768, got %v", lo.FromPtr(got.MaxTokens))
+	}
+	if got.Reasoning.MaxTokens != 32*1024-1 {
+		t.Errorf("Reasoning.MaxTokens should be 32767, got %d", got.Reasoning.MaxTokens)
+	}
+}
+
+func TestForceThinking_UnknownFormat_DoesNotOverrideExistingReasoning(t *testing.T) {
+	ctx := testCtxWithForceThinking("unknown")
+
+	src := &anthropic.GenerateMessageRequest{
+		Model:     "some-unknown-model",
+		MaxTokens: 1000,
+		Thinking:  &anthropic.Thinking{Type: anthropic.ThinkingTypeEnabled, BudgetTokens: 1234},
+		Messages:  []*anthropic.Message{},
+	}
+
+	got := ConvertAnthropicRequestToOpenRouterRequest(ctx, src)
+
+	if got.Reasoning == nil || !got.Reasoning.Enabled {
+		t.Fatalf("Reasoning should remain enabled from source")
+	}
+	if got.Reasoning.MaxTokens != 1234 {
+		t.Errorf("Existing Reasoning.MaxTokens should be preserved, got %d", got.Reasoning.MaxTokens)
+	}
+}
+
+func TestCanonicalOpenRouterMessages_UnknownFormat(t *testing.T) {
+	prof := testProfileWithOptions(func(p *profile.Profile) {
+		p.Options.Reasoning.Format = "unknown"
+		p.Options.Reasoning.Delimiter = "/"
+	})
+
+	// Create a single anthropic message instance to be shared
+	sharedMsg := &anthropic.Message{Role: anthropic.MessageRoleAssistant}
+
+	src := []*openrouterChatCompletionMessageWrapper{
+		{
+			ChatCompletionMessage: &openrouter.ChatCompletionMessage{
+				Role: openrouter.ChatCompletionMessageRoleAssistant,
+				Content: &openrouter.ChatCompletionMessageContent{
+					Type: openrouter.ChatCompletionMessageContentTypeText,
+					Text: "Let me think about this",
+				},
+				ReasoningDetails: []*openrouter.ChatCompletionMessageReasoningDetail{
+					{
+						Type:      openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText,
+						Text:      "First thought",
+						Signature: "sig123/data456",
+					},
+				},
+			},
+			underlyingAnthropicMessage: sharedMsg,
+		},
+		{
+			ChatCompletionMessage: &openrouter.ChatCompletionMessage{
+				Role: openrouter.ChatCompletionMessageRoleAssistant,
+				Content: &openrouter.ChatCompletionMessageContent{
+					Type: openrouter.ChatCompletionMessageContentTypeText,
+					Text: "And here's my answer",
+				},
+				ReasoningDetails: []*openrouter.ChatCompletionMessageReasoningDetail{
+					{
+						Type:      openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText,
+						Text:      "Second thought",
+						Signature: "sig789/data012",
+					},
+				},
+			},
+			underlyingAnthropicMessage: sharedMsg, // Same message reference
+		},
+	}
+
+	messages := canonicalOpenRouterMessages(prof, "some-unknown-model", src)
+	if len(messages) != 1 {
+		t.Fatalf("Expected 1 merged message, got %d", len(messages))
+	}
+
+	msg := messages[0]
+	if msg.Role != openrouter.ChatCompletionMessageRoleAssistant {
+		t.Errorf("Expected role assistant, got %s", msg.Role)
+	}
+
+	// Check that content is merged into Parts
+	if msg.Content.Type != openrouter.ChatCompletionMessageContentTypeParts {
+		t.Errorf("Expected content type parts, got %s", msg.Content.Type)
+	}
+	if len(msg.Content.Parts) != 2 {
+		t.Fatalf("Expected 2 content parts, got %d", len(msg.Content.Parts))
+	}
+	if msg.Content.Parts[0].Text != "Let me think about this" {
+		t.Errorf("Expected first part text 'Let me think about this', got %q", msg.Content.Parts[0].Text)
+	}
+	if msg.Content.Parts[1].Text != "And here's my answer" {
+		t.Errorf("Expected second part text 'And here's my answer', got %q", msg.Content.Parts[1].Text)
+	}
+
+	// Check that reasoning details are properly formatted with unknown format
+	// Unknown format processes reasoning details like GoogleGeminiV1/OpenAIResponsesV1
+	if len(msg.ReasoningDetails) != 4 {
+		t.Fatalf("Expected 4 reasoning details (2 reasoning.text + 2 encrypted), got %d", len(msg.ReasoningDetails))
+	}
+
+	// First reasoning detail should be reasoning.text type with unknown format
+	if msg.ReasoningDetails[0].Type != openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText {
+		t.Errorf("Expected first reasoning detail to be reasoning.text type, got %s", msg.ReasoningDetails[0].Type)
+	}
+	if msg.ReasoningDetails[0].Format != openrouter.ChatCompletionMessageReasoningDetailFormatUnknown {
+		t.Errorf("Expected format unknown, got %s", msg.ReasoningDetails[0].Format)
+	}
+	if msg.ReasoningDetails[0].Text != "First thought" {
+		t.Errorf("Expected text 'First thought', got %q", msg.ReasoningDetails[0].Text)
+	}
+
+	// Second reasoning detail should be encrypted type with signature split
+	if msg.ReasoningDetails[1].Type != openrouter.ChatCompletionMessageReasoningDetailTypeEncrypted {
+		t.Errorf("Expected second reasoning detail to be encrypted type, got %s", msg.ReasoningDetails[1].Type)
+	}
+	if msg.ReasoningDetails[1].Format != openrouter.ChatCompletionMessageReasoningDetailFormatUnknown {
+		t.Errorf("Expected format unknown, got %s", msg.ReasoningDetails[1].Format)
+	}
+	if msg.ReasoningDetails[1].ID != "sig123" {
+		t.Errorf("Expected ID 'sig123', got %q", msg.ReasoningDetails[1].ID)
+	}
+	if msg.ReasoningDetails[1].Data != "data456" {
+		t.Errorf("Expected Data 'data456', got %q", msg.ReasoningDetails[1].Data)
+	}
+
+	// Third reasoning detail should be reasoning.text for second thought
+	if msg.ReasoningDetails[2].Type != openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText {
+		t.Errorf("Expected third reasoning detail to be reasoning.text type, got %s", msg.ReasoningDetails[2].Type)
+	}
+	if msg.ReasoningDetails[2].Format != openrouter.ChatCompletionMessageReasoningDetailFormatUnknown {
+		t.Errorf("Expected format unknown, got %s", msg.ReasoningDetails[2].Format)
+	}
+	if msg.ReasoningDetails[2].Text != "Second thought" {
+		t.Errorf("Expected text 'Second thought', got %q", msg.ReasoningDetails[2].Text)
+	}
+
+	// Fourth reasoning detail should be encrypted for second signature
+	if msg.ReasoningDetails[3].Type != openrouter.ChatCompletionMessageReasoningDetailTypeEncrypted {
+		t.Errorf("Expected fourth reasoning detail to be encrypted type, got %s", msg.ReasoningDetails[3].Type)
+	}
+	if msg.ReasoningDetails[3].Format != openrouter.ChatCompletionMessageReasoningDetailFormatUnknown {
+		t.Errorf("Expected format unknown, got %s", msg.ReasoningDetails[3].Format)
+	}
+	if msg.ReasoningDetails[3].ID != "sig789" {
+		t.Errorf("Expected ID 'sig789', got %q", msg.ReasoningDetails[3].ID)
+	}
+	if msg.ReasoningDetails[3].Data != "data012" {
+		t.Errorf("Expected Data 'data012', got %q", msg.ReasoningDetails[3].Data)
+	}
+
+	// Check indices are set correctly
+	if msg.ReasoningDetails[0].Index != 0 {
+		t.Errorf("Expected first reasoning detail to have index 0, got %d", msg.ReasoningDetails[0].Index)
+	}
+	if msg.ReasoningDetails[1].Index != 0 {
+		t.Errorf("Expected second reasoning detail to have index 0 (same as reasoning.text), got %d", msg.ReasoningDetails[1].Index)
+	}
+	if msg.ReasoningDetails[2].Index != 1 {
+		t.Errorf("Expected third reasoning detail to have index 1, got %d", msg.ReasoningDetails[2].Index)
+	}
+	if msg.ReasoningDetails[3].Index != 1 {
+		t.Errorf("Expected fourth reasoning detail to have index 1 (same as reasoning.text), got %d", msg.ReasoningDetails[3].Index)
+	}
+}
+
+func TestCanonicalOpenRouterMessages_UnknownFormat_WithSignatureWithoutDelimiter(t *testing.T) {
+	prof := testProfileWithOptions(func(p *profile.Profile) {
+		p.Options.Reasoning.Format = "unknown"
+		p.Options.Reasoning.Delimiter = "/"
+	})
+
+	sharedMsg := &anthropic.Message{Role: anthropic.MessageRoleAssistant}
+
+	src := []*openrouterChatCompletionMessageWrapper{
+		{
+			ChatCompletionMessage: &openrouter.ChatCompletionMessage{
+				Role: openrouter.ChatCompletionMessageRoleAssistant,
+				Content: &openrouter.ChatCompletionMessageContent{
+					Type: openrouter.ChatCompletionMessageContentTypeText,
+					Text: "Response text",
+				},
+				ReasoningDetails: []*openrouter.ChatCompletionMessageReasoningDetail{
+					{
+						Type:      openrouter.ChatCompletionMessageReasoningDetailTypeReasoningText,
+						Text:      "Thinking",
+						Signature: "signature_without_delimiter",
+					},
+				},
+			},
+			underlyingAnthropicMessage: sharedMsg,
+		},
+	}
+
+	messages := canonicalOpenRouterMessages(prof, "some-model", src)
+	if len(messages) != 1 {
+		t.Fatalf("Expected 1 message, got %d", len(messages))
+	}
+
+	msg := messages[0]
+	if len(msg.ReasoningDetails) != 2 {
+		t.Fatalf("Expected 2 reasoning details, got %d", len(msg.ReasoningDetails))
+	}
+
+	// When signature has no delimiter, ID should be empty and Data should contain the whole signature
+	encrypted := msg.ReasoningDetails[1]
+	if encrypted.Type != openrouter.ChatCompletionMessageReasoningDetailTypeEncrypted {
+		t.Errorf("Expected encrypted type, got %s", encrypted.Type)
+	}
+	if encrypted.ID != "" {
+		t.Errorf("Expected empty ID when no delimiter, got %q", encrypted.ID)
+	}
+	if encrypted.Data != "signature_without_delimiter" {
+		t.Errorf("Expected Data to contain whole signature, got %q", encrypted.Data)
+	}
+}

@@ -391,6 +391,7 @@ const (
 type ChatCompletionMessageReasoningDetailFormat string
 
 const (
+	ChatCompletionMessageReasoningDetailFormatUnknown           ChatCompletionMessageReasoningDetailFormat = "unknown"
 	ChatCompletionMessageReasoningDetailFormatAnthropicClaudeV1 ChatCompletionMessageReasoningDetailFormat = "anthropic-claude-v1"
 	ChatCompletionMessageReasoningDetailFormatOpenAIResponsesV1 ChatCompletionMessageReasoningDetailFormat = "openai-responses-v1"
 	ChatCompletionMessageReasoningDetailFormatGoogleGeminiV1    ChatCompletionMessageReasoningDetailFormat = "google-gemini-v1"
