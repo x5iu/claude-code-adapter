@@ -634,12 +634,11 @@ func TestConvertAnthropicRequestToOpenRouterRequest_Messages(t *testing.T) {
 					return false
 				}
 				toolResultMsg := dst.Messages[0] // No system message since System field is empty
+				// Tool result message with single text part and no CacheControl is simplified to Text type
 				return toolResultMsg.Role == openrouter.ChatCompletionMessageRoleTool &&
 					toolResultMsg.ToolCallID == "tool_123" &&
-					toolResultMsg.Content.Type == openrouter.ChatCompletionMessageContentTypeParts &&
-					len(toolResultMsg.Content.Parts) == 1 &&
-					toolResultMsg.Content.Parts[0].Type == openrouter.ChatCompletionMessageContentPartTypeText &&
-					toolResultMsg.Content.Parts[0].Text == "The weather is sunny, 72°F"
+					toolResultMsg.Content.Type == openrouter.ChatCompletionMessageContentTypeText &&
+					toolResultMsg.Content.Text == "The weather is sunny, 72°F"
 			},
 		},
 	}
