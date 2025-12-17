@@ -406,7 +406,8 @@ func canonicalOpenRouterMessages(
 	}
 	for _, message := range messages {
 		switch message.Role {
-		case openrouter.ChatCompletionMessageRoleAssistant:
+		case openrouter.ChatCompletionMessageRoleAssistant,
+			openrouter.ChatCompletionMessageRoleTool:
 			if content := message.Content; content != nil && content.IsParts() && len(content.Parts) == 1 {
 				if part := content.Parts[0]; part.Type == openrouter.ChatCompletionMessageContentPartTypeText {
 					// Anthropic only accepts text message in a single assistant message, and content should be a string
