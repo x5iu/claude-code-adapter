@@ -170,7 +170,6 @@ func loadAnthropicConfig(v *viper.Viper, key string) *AnthropicConfig {
 	return &AnthropicConfig{
 		UseRawRequestBody:              v.GetBool(delimiter.ViperKey(key, "use_raw_request_body")),
 		EnablePassThroughMode:          v.GetBool(delimiter.ViperKey(key, "enable_pass_through_mode")),
-		DisableInterleavedThinking:     v.GetBool(delimiter.ViperKey(key, "disable_interleaved_thinking")),
 		DisableWebSearchBlockedDomains: v.GetBool(delimiter.ViperKey(key, "disable_web_search_blocked_domains")),
 		ForceThinking:                  v.GetBool(delimiter.ViperKey(key, "force_thinking")),
 		BaseURL:                        v.GetString(delimiter.ViperKey(key, "base_url")),
@@ -318,14 +317,6 @@ func (a *AnthropicConfig) GetForceThinking() bool {
 		return false
 	}
 	return a.ForceThinking
-}
-
-// GetDisableInterleavedThinking safely gets the flag.
-func (a *AnthropicConfig) GetDisableInterleavedThinking() bool {
-	if a == nil {
-		return false
-	}
-	return a.DisableInterleavedThinking
 }
 
 // GetEnablePassThroughMode safely gets the flag.

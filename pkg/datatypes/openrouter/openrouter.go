@@ -7,11 +7,15 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"maps"
 	"net/http"
+	"slices"
+	"strings"
 
 	"github.com/samber/lo"
 	"github.com/spf13/viper"
 
+	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
 	"github.com/x5iu/claude-code-adapter/pkg/utils"
 	"github.com/x5iu/claude-code-adapter/pkg/utils/delimiter"
 )
@@ -46,6 +50,27 @@ func WithProviderPreference(pref *ProviderPreference) func(*http.Request) {
 					}
 				}
 			}
+		}
+	}
+}
+
+func WithAnthropicBetaFeatures(oriHeader http.Header) func(*http.Request) {
+	return func(req *http.Request) {
+		featSet := make(map[string]struct{}, 2)
+		for _, features := range oriHeader.Values(anthropic.HeaderBeta) {
+			if features != "" {
+				for feature := range strings.SplitSeq(features, ",") {
+					switch strings.ToLower(strings.TrimSpace(feature)) {
+					case anthropic.BetaFeatureFineGrainedToolStreaming20250514:
+						featSet[feature] = struct{}{}
+					case anthropic.BetaFeatureInterleavedThinking20250514:
+						featSet[feature] = struct{}{}
+					}
+				}
+			}
+		}
+		if features := slices.Collect(maps.Keys(featSet)); len(features) > 0 {
+			req.Header.Add("x-anthropic-beta", strings.Join(features, ","))
 		}
 	}
 }

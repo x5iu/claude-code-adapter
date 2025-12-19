@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/samber/lo"
@@ -585,4 +586,266 @@ func TestError_ErrorString(t *testing.T) {
 	if e4.Error() != "(403) Forbidden" {
 		t.Fatalf("partial metadata (missing provider) mismatch: %s", e4.Error())
 	}
+}
+
+func TestWithAnthropicBetaFeatures_EmptyHeader(t *testing.T) {
+	req := &http.Request{Header: http.Header{}}
+	oriHeader := http.Header{}
+
+	WithAnthropicBetaFeatures(oriHeader)(req)
+
+	if req.Header.Get("x-anthropic-beta") != "" {
+		t.Fatalf("expected no x-anthropic-beta header, got: %q", req.Header.Get("x-anthropic-beta"))
+	}
+}
+
+func TestWithAnthropicBetaFeatures_NoRelevantFeatures(t *testing.T) {
+	req := &http.Request{Header: http.Header{}}
+	oriHeader := make(http.Header)
+	oriHeader.Set("anthropic-beta", "some-other-feature-2024-01-01")
+
+	WithAnthropicBetaFeatures(oriHeader)(req)
+
+	if req.Header.Get("x-anthropic-beta") != "" {
+		t.Fatalf("expected no x-anthropic-beta header for irrelevant features, got: %q", req.Header.Get("x-anthropic-beta"))
+	}
+}
+
+func TestWithAnthropicBetaFeatures_FineGrainedToolStreamingOnly(t *testing.T) {
+	req := &http.Request{Header: http.Header{}}
+	oriHeader := make(http.Header)
+	oriHeader.Set("anthropic-beta", "fine-grained-tool-streaming-2025-05-14")
+
+	WithAnthropicBetaFeatures(oriHeader)(req)
+
+	headerVal := req.Header.Get("x-anthropic-beta")
+	if headerVal != "fine-grained-tool-streaming-2025-05-14" {
+		t.Fatalf("expected fine-grained-tool-streaming feature, got: %q", headerVal)
+	}
+}
+
+func TestWithAnthropicBetaFeatures_InterleavedThinkingOnly(t *testing.T) {
+	req := &http.Request{Header: http.Header{}}
+	oriHeader := make(http.Header)
+	oriHeader.Set("anthropic-beta", "interleaved-thinking-2025-05-14")
+
+	WithAnthropicBetaFeatures(oriHeader)(req)
+
+	headerVal := req.Header.Get("x-anthropic-beta")
+	if headerVal != "interleaved-thinking-2025-05-14" {
+		t.Fatalf("expected interleaved-thinking feature, got: %q", headerVal)
+	}
+}
+
+func TestWithAnthropicBetaFeatures_BothFeaturesInSingleValue(t *testing.T) {
+	req := &http.Request{Header: http.Header{}}
+	oriHeader := make(http.Header)
+	oriHeader.Set("anthropic-beta", "fine-grained-tool-streaming-2025-05-14,interleaved-thinking-2025-05-14")
+
+	WithAnthropicBetaFeatures(oriHeader)(req)
+
+	headerVal := req.Header.Get("x-anthropic-beta")
+	// Both features should be present (order may vary due to map iteration)
+	if headerVal == "" {
+		t.Fatalf("expected x-anthropic-beta header to be set")
+	}
+	if !containsFeature(headerVal, "fine-grained-tool-streaming-2025-05-14") {
+		t.Fatalf("expected fine-grained-tool-streaming feature in header, got: %q", headerVal)
+	}
+	if !containsFeature(headerVal, "interleaved-thinking-2025-05-14") {
+		t.Fatalf("expected interleaved-thinking feature in header, got: %q", headerVal)
+	}
+}
+
+func TestWithAnthropicBetaFeatures_BothFeaturesInMultipleValues(t *testing.T) {
+	req := &http.Request{Header: http.Header{}}
+	oriHeader := make(http.Header)
+	oriHeader.Add("anthropic-beta", "fine-grained-tool-streaming-2025-05-14")
+	oriHeader.Add("anthropic-beta", "interleaved-thinking-2025-05-14")
+
+	WithAnthropicBetaFeatures(oriHeader)(req)
+
+	headerVal := req.Header.Get("x-anthropic-beta")
+	if headerVal == "" {
+		t.Fatalf("expected x-anthropic-beta header to be set")
+	}
+	if !containsFeature(headerVal, "fine-grained-tool-streaming-2025-05-14") {
+		t.Fatalf("expected fine-grained-tool-streaming feature in header, got: %q", headerVal)
+	}
+	if !containsFeature(headerVal, "interleaved-thinking-2025-05-14") {
+		t.Fatalf("expected interleaved-thinking feature in header, got: %q", headerVal)
+	}
+}
+
+func TestWithAnthropicBetaFeatures_MixedFeaturesFiltering(t *testing.T) {
+	req := &http.Request{Header: http.Header{}}
+	oriHeader := make(http.Header)
+	oriHeader.Add("anthropic-beta", "fine-grained-tool-streaming-2025-05-14,some-unknown-feature")
+	oriHeader.Add("anthropic-beta", "another-unknown,interleaved-thinking-2025-05-14,yet-another")
+
+	WithAnthropicBetaFeatures(oriHeader)(req)
+
+	headerVal := req.Header.Get("x-anthropic-beta")
+	if headerVal == "" {
+		t.Fatalf("expected x-anthropic-beta header to be set")
+	}
+	if !containsFeature(headerVal, "fine-grained-tool-streaming-2025-05-14") {
+		t.Fatalf("expected fine-grained-tool-streaming feature in header, got: %q", headerVal)
+	}
+	if !containsFeature(headerVal, "interleaved-thinking-2025-05-14") {
+		t.Fatalf("expected interleaved-thinking feature in header, got: %q", headerVal)
+	}
+	// Unknown features should NOT be present
+	if containsFeature(headerVal, "some-unknown-feature") {
+		t.Fatalf("unexpected unknown feature in header: %q", headerVal)
+	}
+	if containsFeature(headerVal, "another-unknown") {
+		t.Fatalf("unexpected unknown feature in header: %q", headerVal)
+	}
+}
+
+func TestWithAnthropicBetaFeatures_DuplicateFeaturesDeduplication(t *testing.T) {
+	req := &http.Request{Header: http.Header{}}
+	oriHeader := make(http.Header)
+	oriHeader.Add("anthropic-beta", "fine-grained-tool-streaming-2025-05-14")
+	oriHeader.Add("anthropic-beta", "fine-grained-tool-streaming-2025-05-14,interleaved-thinking-2025-05-14")
+	oriHeader.Add("anthropic-beta", "interleaved-thinking-2025-05-14")
+
+	WithAnthropicBetaFeatures(oriHeader)(req)
+
+	headerVal := req.Header.Get("x-anthropic-beta")
+	if headerVal == "" {
+		t.Fatalf("expected x-anthropic-beta header to be set")
+	}
+	// Count occurrences - should only appear once each due to map deduplication
+	count := countFeatureOccurrences(headerVal, "fine-grained-tool-streaming-2025-05-14")
+	if count != 1 {
+		t.Fatalf("expected fine-grained-tool-streaming to appear once, got %d in: %q", count, headerVal)
+	}
+	count = countFeatureOccurrences(headerVal, "interleaved-thinking-2025-05-14")
+	if count != 1 {
+		t.Fatalf("expected interleaved-thinking to appear once, got %d in: %q", count, headerVal)
+	}
+}
+
+func TestWithAnthropicBetaFeatures_CaseInsensitiveMatching(t *testing.T) {
+	req := &http.Request{Header: http.Header{}}
+	oriHeader := make(http.Header)
+	oriHeader.Add("anthropic-beta", "FINE-GRAINED-TOOL-STREAMING-2025-05-14")
+	oriHeader.Add("anthropic-beta", "Interleaved-Thinking-2025-05-14")
+
+	WithAnthropicBetaFeatures(oriHeader)(req)
+
+	headerVal := req.Header.Get("x-anthropic-beta")
+	if headerVal == "" {
+		t.Fatalf("expected x-anthropic-beta header to be set for case-insensitive matching")
+	}
+	// The original case should be preserved in the output
+	if !containsFeature(headerVal, "FINE-GRAINED-TOOL-STREAMING-2025-05-14") {
+		t.Fatalf("expected FINE-GRAINED-TOOL-STREAMING-2025-05-14 feature (original case) in header, got: %q", headerVal)
+	}
+	if !containsFeature(headerVal, "Interleaved-Thinking-2025-05-14") {
+		t.Fatalf("expected Interleaved-Thinking-2025-05-14 feature (original case) in header, got: %q", headerVal)
+	}
+}
+
+func TestWithAnthropicBetaFeatures_WhitespaceHandling(t *testing.T) {
+	req := &http.Request{Header: http.Header{}}
+	oriHeader := make(http.Header)
+	oriHeader.Add("anthropic-beta", "  fine-grained-tool-streaming-2025-05-14  ")
+	oriHeader.Add("anthropic-beta", " interleaved-thinking-2025-05-14 , some-other ")
+
+	WithAnthropicBetaFeatures(oriHeader)(req)
+
+	headerVal := req.Header.Get("x-anthropic-beta")
+	if headerVal == "" {
+		t.Fatalf("expected x-anthropic-beta header to be set")
+	}
+	// Features should be trimmed and matched
+	if !containsFeature(headerVal, "fine-grained-tool-streaming-2025-05-14") {
+		t.Fatalf("expected fine-grained-tool-streaming feature in header, got: %q", headerVal)
+	}
+	if !containsFeature(headerVal, "interleaved-thinking-2025-05-14") {
+		t.Fatalf("expected interleaved-thinking feature in header, got: %q", headerVal)
+	}
+}
+
+func TestWithAnthropicBetaFeatures_EmptyStringInValues(t *testing.T) {
+	req := &http.Request{Header: http.Header{}}
+	oriHeader := make(http.Header)
+	oriHeader.Add("anthropic-beta", "")
+	oriHeader.Add("anthropic-beta", "fine-grained-tool-streaming-2025-05-14")
+
+	WithAnthropicBetaFeatures(oriHeader)(req)
+
+	headerVal := req.Header.Get("x-anthropic-beta")
+	if headerVal != "fine-grained-tool-streaming-2025-05-14" {
+		t.Fatalf("expected fine-grained-tool-streaming feature, got: %q", headerVal)
+	}
+}
+
+func TestWithAnthropicBetaFeatures_ExistingHeaderNotOverwritten(t *testing.T) {
+	req := &http.Request{Header: http.Header{}}
+	req.Header.Set("x-anthropic-beta", "existing-feature")
+
+	oriHeader := make(http.Header)
+	oriHeader.Set("anthropic-beta", "fine-grained-tool-streaming-2025-05-14")
+
+	WithAnthropicBetaFeatures(oriHeader)(req)
+
+	// Should add, not overwrite (using Header.Add)
+	values := req.Header.Values("x-anthropic-beta")
+	if len(values) != 2 {
+		t.Fatalf("expected 2 values for x-anthropic-beta, got: %v", values)
+	}
+	if values[0] != "existing-feature" {
+		t.Fatalf("expected first value to be 'existing-feature', got: %q", values[0])
+	}
+	if values[1] != "fine-grained-tool-streaming-2025-05-14" {
+		t.Fatalf("expected second value to be 'fine-grained-tool-streaming-2025-05-14', got: %q", values[1])
+	}
+}
+
+func TestWithAnthropicBetaFeatures_CommaOnlyValue(t *testing.T) {
+	req := &http.Request{Header: http.Header{}}
+	oriHeader := make(http.Header)
+	oriHeader.Set("anthropic-beta", ",,,")
+
+	WithAnthropicBetaFeatures(oriHeader)(req)
+
+	if req.Header.Get("x-anthropic-beta") != "" {
+		t.Fatalf("expected no x-anthropic-beta header for comma-only value, got: %q", req.Header.Get("x-anthropic-beta"))
+	}
+}
+
+func TestWithAnthropicBetaFeatures_NilOriHeader(t *testing.T) {
+	req := &http.Request{Header: http.Header{}}
+	var oriHeader http.Header // nil
+
+	WithAnthropicBetaFeatures(oriHeader)(req)
+
+	if req.Header.Get("x-anthropic-beta") != "" {
+		t.Fatalf("expected no x-anthropic-beta header for nil oriHeader, got: %q", req.Header.Get("x-anthropic-beta"))
+	}
+}
+
+// Helper function to check if a comma-separated header contains a specific feature
+func containsFeature(headerVal, feature string) bool {
+	for _, f := range strings.Split(headerVal, ",") {
+		if strings.TrimSpace(f) == feature {
+			return true
+		}
+	}
+	return false
+}
+
+// Helper function to count occurrences of a feature in a comma-separated header
+func countFeatureOccurrences(headerVal, feature string) int {
+	count := 0
+	for _, f := range strings.Split(headerVal, ",") {
+		if strings.TrimSpace(f) == feature {
+			count++
+		}
+	}
+	return count
 }
