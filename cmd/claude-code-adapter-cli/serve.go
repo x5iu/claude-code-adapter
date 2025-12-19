@@ -333,29 +333,8 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 				return isServerTool
 			})
 		})
-		useInterleavedThinking := sync.OnceValue(func() bool {
-			budgetTokensOverflow := req.Thinking != nil && req.Thinking.Type == anthropic.ThinkingTypeEnabled && req.Thinking.BudgetTokens >= req.MaxTokens
-			if budgetTokensOverflow {
-				var hasInterleavedFeatures bool
-				for _, features := range r.Header.Values(anthropic.HeaderBeta) {
-					if features != "" {
-						for feature := range strings.SplitSeq(features, ",") {
-							if strings.EqualFold(strings.TrimSpace(feature), anthropic.BetaFeatureInterleavedThinking20250514) {
-								hasInterleavedFeatures = true
-								break
-							}
-						}
-					}
-				}
-				if !hasInterleavedFeatures {
-					r.Header.Add(anthropic.HeaderBeta, anthropic.BetaFeatureInterleavedThinking20250514)
-				}
-				slog.Info(fmt.Sprintf("[%d] request's thinking tokens (%d) is greater than max tokens (%d)", requestID, req.Thinking.BudgetTokens, req.MaxTokens))
-			}
-			return budgetTokensOverflow && !prof.Anthropic.GetDisableInterleavedThinking()
-		})
 		useAnthropicProvider := func() bool {
-			return hasServerTools() || useInterleavedThinking() || prof.Provider == ProviderAnthropic
+			return hasServerTools() || prof.Provider == ProviderAnthropic
 		}
 		var (
 			stream     anthropic.MessageStream
@@ -480,6 +459,7 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 					ctx,
 					openrouterRequest,
 					openrouter.WithIdentity("https://github.com/x5iu/claude-code-adapter", "claude-code-adapter"),
+					openrouter.WithAnthropicBetaFeatures(r.Header),
 					openrouter.WithProviderPreference(&openrouter.ProviderPreference{
 						Order:             allowedProviders,
 						AllowFallbacks:    lo.ToPtr(true),
@@ -653,7 +633,6 @@ func profileToSnapshotConfig(p *profile.Profile) *snapshot.Config {
 		cfg.Anthropic = &snapshot.AnthropicConfig{
 			UseRawRequestBody:              p.Anthropic.UseRawRequestBody,
 			EnablePassThroughMode:          p.Anthropic.EnablePassThroughMode,
-			DisableInterleavedThinking:     p.Anthropic.DisableInterleavedThinking,
 			DisableWebSearchBlockedDomains: p.Anthropic.DisableWebSearchBlockedDomains,
 			ForceThinking:                  p.Anthropic.ForceThinking,
 			BaseURL:                        p.Anthropic.BaseURL,

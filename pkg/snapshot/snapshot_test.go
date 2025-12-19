@@ -31,7 +31,6 @@ options:
   disable_count_tokens_request: false
 anthropic:
   enable_pass_through_mode: false
-  disable_interleaved_thinking: false
   force_thinking: false
   base_url: "https://api.anthropic.com"
   version: "2023-06-01"

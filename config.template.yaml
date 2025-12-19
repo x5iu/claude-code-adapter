@@ -67,8 +67,6 @@ profiles:
       use_raw_request_body: true
       # Bypass conversion and forward the incoming Messages API request directly to Anthropic when true.
       enable_pass_through_mode: false
-      # Never enable interleaved thinking even if thinking budget exceeds max_tokens when true.
-      disable_interleaved_thinking: false
       # Remove 'blocked_domains' from the web_search tool schema before count_tokens to avoid unsupported fields.
       disable_web_search_blocked_domains: false
       # Force thinking to be enabled (with large MaxTokens) for Anthropic-style reasoning on OpenRouter targets when needed.
@@ -114,7 +112,6 @@ profiles:
       api_key: "${ANTHROPIC_API_KEY}"
       use_raw_request_body: true
       enable_pass_through_mode: false
-      disable_interleaved_thinking: false
       disable_web_search_blocked_domains: false
       force_thinking: false
       base_url: "https://api.anthropic.com"
@@ -152,7 +149,6 @@ profiles:
       api_key: "${ANTHROPIC_API_KEY}"
       use_raw_request_body: true
       enable_pass_through_mode: false
-      disable_interleaved_thinking: false
       disable_web_search_blocked_domains: false
       force_thinking: false
       base_url: "https://api.anthropic.com"
@@ -187,7 +183,6 @@ profiles:
       api_key: "${ANTHROPIC_API_KEY}"
       use_raw_request_body: true
       enable_pass_through_mode: false
-      disable_interleaved_thinking: false
       disable_web_search_blocked_domains: false
       force_thinking: false
       base_url: "https://api.anthropic.com"
@@ -222,7 +217,6 @@ profiles:
       api_key: "${ANTHROPIC_API_KEY}"
       use_raw_request_body: true
       enable_pass_through_mode: false
-      disable_interleaved_thinking: false
       disable_web_search_blocked_domains: false
       force_thinking: false
       base_url: "https://api.anthropic.com"

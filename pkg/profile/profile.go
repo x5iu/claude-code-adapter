@@ -45,7 +45,6 @@ type ReasoningConfig struct {
 type AnthropicConfig struct {
 	UseRawRequestBody              bool   `yaml:"use_raw_request_body" json:"use_raw_request_body" mapstructure:"use_raw_request_body"`
 	EnablePassThroughMode          bool   `yaml:"enable_pass_through_mode" json:"enable_pass_through_mode" mapstructure:"enable_pass_through_mode"`
-	DisableInterleavedThinking     bool   `yaml:"disable_interleaved_thinking" json:"disable_interleaved_thinking" mapstructure:"disable_interleaved_thinking"`
 	DisableWebSearchBlockedDomains bool   `yaml:"disable_web_search_blocked_domains" json:"disable_web_search_blocked_domains" mapstructure:"disable_web_search_blocked_domains"`
 	ForceThinking                  bool   `yaml:"force_thinking" json:"force_thinking" mapstructure:"force_thinking"`
 	BaseURL                        string `yaml:"base_url" json:"base_url" mapstructure:"base_url"`

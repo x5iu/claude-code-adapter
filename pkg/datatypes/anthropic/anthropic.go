@@ -19,7 +19,8 @@ func WithBetaFeatures(features ...string) func(*http.Request) {
 }
 
 const (
-	BetaFeatureInterleavedThinking20250514 = "interleaved-thinking-2025-05-14"
+	BetaFeatureFineGrainedToolStreaming20250514 = "fine-grained-tool-streaming-2025-05-14"
+	BetaFeatureInterleavedThinking20250514      = "interleaved-thinking-2025-05-14"
 )
 
 const (
