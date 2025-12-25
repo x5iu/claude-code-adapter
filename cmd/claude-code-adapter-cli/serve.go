@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"os/signal"
@@ -122,6 +123,7 @@ func serve(cmd *cobra.Command, _ []string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("/v1/messages", onMessages(cmd, provider.NewProvider(), recorder, &profileManagerPtr))
+	mux.HandleFunc("/v1/messages/count_tokens", onCountTokens(&profileManagerPtr))
 	server := &http.Server{
 		Addr:     fmt.Sprintf("%s:%d", viper.GetString(delimiter.ViperKey("http", "host")), viper.GetUint16(delimiter.ViperKey("http", "port"))),
 		Handler:  mux,
@@ -165,6 +167,7 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 				}
 			}()
 		}()
+		removeForwardedHeaders(r.Header)
 		r.Header.Del(anthropic.HeaderAPIKey)
 		r.Header.Set("User-Agent", fmt.Sprintf("claude-code-adapter-cli/%s", version[1:]))
 		w.Header().Set("X-Cc-Request-Id", strconv.FormatInt(requestID, 10))
@@ -276,6 +279,22 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 				}
 			}
 		}
+		if prof.Options.GetPreventEmptyTextToolResult() {
+			// No idea why Claude Code send empty text in tool_result, so we replace it with a hint message if necessary.
+			for _, message := range req.Messages {
+				if message != nil {
+					for _, content := range message.Content {
+						if content != nil && content.Type == anthropic.MessageContentTypeToolResult {
+							for _, part := range content.Content {
+								if part != nil && part.Type == anthropic.MessageContentTypeText && part.Text == "" {
+									part.Text = "(No content)"
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 		var (
 			inputTokens  int64
 			outputTokens int64
@@ -371,6 +390,10 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 					provider.WithHeaders(r.Header),
 				}
 				if prof.Anthropic.GetUseRawRequestBody() {
+					rawBody, err = sjson.SetBytes(rawBody, "stream", true)
+					if err != nil {
+						panic(fmt.Errorf("unreachable: %s", err.Error()))
+					}
 					options = append(options, provider.ReplaceBody(rawBody))
 				}
 				stream, header, err = prov.GenerateAnthropicMessage(ctx, req, options...)
@@ -507,6 +530,7 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 		} else {
 			w.Header().Set("Content-Type", "application/json")
 		}
+		contextWindowResizeFactor := prof.Options.GetContextWindowResizeFactor()
 		for event, err := range stream {
 			if err != nil {
 				if req.Stream {
@@ -522,6 +546,32 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 					sn.StatusCode = http.StatusInternalServerError
 				}
 				return
+			}
+			switch e := event.(type) {
+			case *anthropic.EventMessageStart:
+				if e.Message != nil {
+					if usage := e.Message.Usage; usage != nil {
+						usage.InputTokens = int64(float64(usage.InputTokens) * contextWindowResizeFactor)
+						usage.OutputTokens = int64(float64(usage.OutputTokens) * contextWindowResizeFactor)
+						usage.CacheReadInputTokens = int64(float64(usage.CacheReadInputTokens) * contextWindowResizeFactor)
+						usage.CacheCreationInputTokens = int64(float64(usage.CacheCreationInputTokens) * contextWindowResizeFactor)
+						if cacheCreation := usage.CacheCreation; cacheCreation != nil {
+							cacheCreation.Ephemeral5MInputTokens = int64(float64(cacheCreation.Ephemeral5MInputTokens) * contextWindowResizeFactor)
+							cacheCreation.Ephemeral1HInputTokens = int64(float64(cacheCreation.Ephemeral1HInputTokens) * contextWindowResizeFactor)
+						}
+					}
+				}
+			case *anthropic.EventMessageDelta:
+				if e.Usage != nil {
+					e.Usage.InputTokens = int64(float64(e.Usage.InputTokens) * contextWindowResizeFactor)
+					e.Usage.OutputTokens = int64(float64(e.Usage.OutputTokens) * contextWindowResizeFactor)
+					e.Usage.CacheReadInputTokens = int64(float64(e.Usage.CacheReadInputTokens) * contextWindowResizeFactor)
+					e.Usage.CacheCreationInputTokens = int64(float64(e.Usage.CacheCreationInputTokens) * contextWindowResizeFactor)
+					if cacheCreation := e.Usage.CacheCreation; cacheCreation != nil {
+						cacheCreation.Ephemeral5MInputTokens = int64(float64(cacheCreation.Ephemeral5MInputTokens) * contextWindowResizeFactor)
+						cacheCreation.Ephemeral1HInputTokens = int64(float64(cacheCreation.Ephemeral1HInputTokens) * contextWindowResizeFactor)
+					}
+				}
 			}
 			if err = dstMessageBuilder.Add(event); err != nil {
 				if req.Stream {
@@ -568,9 +618,18 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 					flusher.Flush()
 				}
 			}
+			if messageStart, isMessageStart := event.(*anthropic.EventMessageStart); isMessageStart {
+				if messageStart.Message != nil {
+					if usage := messageStart.Message.Usage; usage != nil {
+						inputTokens = usage.InputTokens
+					}
+				}
+			}
 			if messageDelta, isMessageDelta := event.(*anthropic.EventMessageDelta); isMessageDelta {
 				if messageDelta.Usage != nil {
-					inputTokens = messageDelta.Usage.InputTokens
+					if messageDelta.Usage.InputTokens > 0 {
+						inputTokens = messageDelta.Usage.InputTokens
+					}
 					outputTokens = messageDelta.Usage.OutputTokens
 				}
 				if messageDelta.Delta != nil && messageDelta.Delta.StopReason != nil {
@@ -721,4 +780,60 @@ func makeSnapshotRecorder(ctx context.Context, cfg string) (snapshot.Recorder, e
 	default:
 		return nil, fmt.Errorf("unsupported snapshot recorder type %q", u.Scheme)
 	}
+}
+
+func onCountTokens(pmPtr *atomic.Pointer[profile.ProfileManager]) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		removeForwardedHeaders(r.Header)
+		if !utils.IsContentType(r.Header, "application/json") {
+			respondError(w,
+				http.StatusBadRequest,
+				fmt.Sprintf("Invalid Content-Type %q", r.Header.Get("Content-Type")),
+			)
+			return
+		}
+		rawBody, err := io.ReadAll(r.Body)
+		if err != nil {
+			respondError(w,
+				http.StatusInternalServerError,
+				fmt.Sprintf("Failed to read request body: %s", err.Error()),
+			)
+			return
+		}
+		// Extract model from request body to match profile
+		model := gjson.GetBytes(rawBody, "model").String()
+		if model == "" {
+			respondError(w, http.StatusBadRequest, "Missing required field: model")
+			return
+		}
+		// Match profile for the requested model
+		prof, err := pmPtr.Load().Match(model)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, fmt.Sprintf("No profile configured for model %q", model))
+			return
+		}
+		// Get the count_tokens backend URL
+		backendURL, err := url.Parse(prof.Anthropic.GetCountTokensBackend())
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to parse count tokens backend URL: %s", err.Error()))
+			return
+		}
+		r.Host = backendURL.Host
+		r.Body = io.NopCloser(bytes.NewReader(rawBody))
+		r.ContentLength = int64(len(rawBody))
+		r.Header.Set("Host", backendURL.Host)
+		r.Header.Set("Content-Lengh", strconv.Itoa(len(rawBody)))
+		r.Header.Set(anthropic.HeaderAPIKey, prof.Anthropic.GetAPIKey())
+		proxy := httputil.NewSingleHostReverseProxy(backendURL)
+		proxy.ServeHTTP(w, r)
+	}
+}
+
+func removeForwardedHeaders(header http.Header) {
+	header.Del("Forwarded")
+	header.Del("X-Forwarded-For")
+	header.Del("X-Forwarded-Host")
+	header.Del("X-Forwarded-Port")
+	header.Del("X-Forwarded-Proto")
+	header.Del("X-Forwarded-Scheme")
 }

@@ -50,6 +50,7 @@ type AnthropicConfig struct {
 	BaseURL                        string `yaml:"base_url" json:"base_url" mapstructure:"base_url"`
 	APIKey                         string `yaml:"api_key" json:"api_key" mapstructure:"api_key"`
 	Version                        string `yaml:"version" json:"version" mapstructure:"version"`
+	CountTokensBackend             string `yaml:"count_tokens_backend" json:"count_tokens_backend" mapstructure:"count_tokens_backend"`
 }
 
 // OpenRouterConfig contains OpenRouter-specific configuration.

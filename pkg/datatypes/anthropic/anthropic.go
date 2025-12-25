@@ -389,8 +389,8 @@ type Usage struct {
 }
 
 type CacheCreationUsage struct {
-	Ephemeral5MInputTokens int `json:"ephemeral_5m_input_tokens"`
-	Ephemeral1HInputTokens int `json:"ephemeral_1h_input_tokens"`
+	Ephemeral5MInputTokens int64 `json:"ephemeral_5m_input_tokens"`
+	Ephemeral1HInputTokens int64 `json:"ephemeral_1h_input_tokens"`
 }
 
 type ServerToolUseUsage struct {

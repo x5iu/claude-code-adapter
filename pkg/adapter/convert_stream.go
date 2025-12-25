@@ -48,7 +48,6 @@ func ConvertOpenRouterStreamToAnthropicStream(
 	for _, applyOption := range options {
 		applyOption(convertOptions)
 	}
-	contextWindowResizeFactor := prof.Options.GetContextWindowResizeFactor()
 	return func(yield func(anthropic.Event, error) bool) {
 		var (
 			startOnce  sync.Once
@@ -75,7 +74,7 @@ func ConvertOpenRouterStreamToAnthropicStream(
 						Role:  anthropic.MessageRoleAssistant,
 						Model: chunk.Model,
 						Usage: &anthropic.Usage{
-							InputTokens:  int64(float64(convertOptions.InputTokens) * contextWindowResizeFactor),
+							InputTokens:  convertOptions.InputTokens,
 							OutputTokens: 1,
 						},
 					},
@@ -86,11 +85,11 @@ func ConvertOpenRouterStreamToAnthropicStream(
 			}
 			if chunk.Usage != nil {
 				usage = &anthropic.Usage{
-					InputTokens:  int64(float64(chunk.Usage.PromptTokens) * contextWindowResizeFactor),
-					OutputTokens: int64(float64(chunk.Usage.CompletionTokens) * contextWindowResizeFactor),
+					InputTokens:  chunk.Usage.PromptTokens,
+					OutputTokens: chunk.Usage.CompletionTokens,
 				}
 				if promptTokensDetails := chunk.Usage.PromptTokensDetails; promptTokensDetails != nil {
-					usage.CacheReadInputTokens = int64(float64(promptTokensDetails.CachedTokens) * contextWindowResizeFactor)
+					usage.CacheReadInputTokens = promptTokensDetails.CachedTokens
 				}
 			}
 			if choices := chunk.Choices; len(choices) > 0 {

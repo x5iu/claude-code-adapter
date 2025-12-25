@@ -265,7 +265,7 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 					ToolCallID: srcMessageContent.ToolUseID,
 				}
 				if srcMessageContent.Content != nil {
-					dstMessage.Content = convertAnthropicToolResultMessageContentsToOpenRouterChatCompletionMessageContent(prof, srcMessageContent.Content)
+					dstMessage.Content = convertAnthropicToolResultMessageContentsToOpenRouterChatCompletionMessageContent(srcMessageContent.Content)
 				}
 				dstMessages = append(dstMessages, &openrouterChatCompletionMessageWrapper{
 					ChatCompletionMessage:      dstMessage,
@@ -489,7 +489,6 @@ func canonicalOpenRouterMessages(
 }
 
 func convertAnthropicToolResultMessageContentsToOpenRouterChatCompletionMessageContent(
-	prof *profile.Profile,
 	src anthropic.MessageContents,
 ) (dst *openrouter.ChatCompletionMessageContent) {
 	if len(src) == 0 {
@@ -511,10 +510,6 @@ func convertAnthropicToolResultMessageContentsToOpenRouterChatCompletionMessageC
 			dstPart := &openrouter.ChatCompletionMessageContentPart{
 				Type: openrouter.ChatCompletionMessageContentPartTypeText,
 				Text: srcContent.Text,
-			}
-			// No idea why Claude Code send empty text in tool_result, so we replace it with a hint message if necessary.
-			if prof.Options.GetPreventEmptyTextToolResult() && srcContent.Text == "" {
-				dstPart.Text = "(No content)"
 			}
 			if srcCacheControl := srcContent.CacheControl; srcCacheControl != nil {
 				dstPart.CacheControl = &openrouter.ChatCompletionMessageCacheControl{
