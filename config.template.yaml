@@ -41,6 +41,9 @@ profiles:
       min_max_tokens: 0
       # List of tool names to disallow for this profile. Matching tools will be removed before request dispatch.
       disallowed_tools: []
+      # Maximum size (in bytes) of a single line in SSE streams. Increase if you encounter
+      # "token too long" errors with large model responses. Default is 1MB (1048576).
+      stream_data_buffer_size: 1048576
       reasoning:
         # Default reasoning detail format when not overridden per-model.
         # "anthropic-claude-v1" for Anthropic-style reasoning; "openai-responses-v1" for OpenAI Responses v1;
