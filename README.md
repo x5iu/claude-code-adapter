@@ -10,11 +10,14 @@ A Go-based proxy server that seamlessly converts between Anthropic's Messages AP
 
 - **API Format Conversion**: Seamlessly converts between Anthropic Messages API and OpenRouter Chat Completions API
 - **Multi-Provider Support**: Works with OpenRouter, Anthropic, and other providers
-- **Profile-Based Configuration**: Define different configurations for different models using pattern matching
+- **Profile-Based Configuration**: Define different configurations for different models using pattern matching; supports hot-reload
+- **Token Counting**: `/v1/messages/count_tokens` endpoint with reverse proxy to Anthropic
 - **Streaming Support**: Full support for streaming responses from both APIs
 - **Model Mapping**: Flexible model name mapping for OpenRouter compatibility
 - **Pass-Through Mode**: Direct passthrough for Anthropic API when conversion isn't needed
 - **Provider Preferences**: Configurable provider filtering for OpenRouter
+- **Tool Filtering**: Remove specific tools via `disallowed_tools` before dispatch
+- **Beta Features Forwarding**: Forwards `anthropic-beta` header features to OpenRouter
 - **Code Generation**: Automatic HTTP client generation using `defc`
 - **Enhanced Logging**: Detailed request tracking with model and provider information
 - **Request/Response Snapshots**: Record requests and responses to JSONL via `--snapshot`
@@ -122,6 +125,8 @@ profiles:
     provider: "anthropic"
     options:
       strict: false
+      min_max_tokens: 0           # Minimum max_tokens (0 to disable)
+      disallowed_tools: []        # Tools to remove before dispatch
       reasoning:
         format: "anthropic-claude-v1"
     anthropic:
@@ -174,7 +179,7 @@ export ANTHROPIC_VERSION="2023-06-01"
 
 ### Core Components
 
-- **Profile System** (`pkg/profile/`): Model-to-configuration matching using prefix patterns (e.g., `claude-*`). First matching profile wins.
+- **Profile System** (`pkg/profile/`): Model-to-configuration matching using prefix patterns (e.g., `claude-*`). First matching profile wins. Supports hot-reload via `fsnotify`.
 - **Provider Interface** (`pkg/provider/`): Main API interface with auto-generated HTTP client
 - **Format Adapter** (`pkg/adapter/convert_request.go`): Converts Anthropic requests to OpenRouter format
 - **Stream Adapter** (`pkg/adapter/convert_stream.go`): Converts OpenRouter streams to Anthropic format
@@ -185,12 +190,15 @@ export ANTHROPIC_VERSION="2023-06-01"
 
 The adapter server operates as an HTTP proxy:
 
-1. **Listens** on configured host/port (default `127.0.0.1:2194`) at endpoint `/v1/messages`
-2. **Accepts** Anthropic Messages API requests from clients
+1. **Listens** on configured host/port (default `127.0.0.1:2194`)
+2. **Endpoints**:
+   - `/v1/messages` - Main Anthropic Messages API endpoint
+   - `/v1/messages/count_tokens` - Token counting (reverse proxy to Anthropic)
 3. **Matches** the request model against configured profiles to determine provider and settings
-4. **Converts** between API formats when using OpenRouter
-5. **Handles** both streaming and non-streaming responses
-6. **Provides** detailed logging with request IDs and token usage tracking
+4. **Auto-selects** Anthropic provider when server tools (computer/bash/text_editor) are present
+5. **Converts** between API formats when using OpenRouter
+6. **Handles** both streaming and non-streaming responses
+7. **Provides** detailed logging with request IDs and token usage tracking
 
 ## Development
 

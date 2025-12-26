@@ -12,23 +12,6 @@ import (
 	"github.com/x5iu/claude-code-adapter/pkg/utils/delimiter"
 )
 
-// RootConfig represents the root configuration structure.
-type RootConfig struct {
-	Profiles map[string]*ProfileConfig `yaml:"profiles" json:"profiles" mapstructure:"profiles"`
-	HTTP     *HTTPConfig               `yaml:"http" json:"http" mapstructure:"http"`
-	Snapshot string                    `yaml:"snapshot" json:"snapshot" mapstructure:"snapshot"`
-}
-
-// ProfileConfig represents a profile configuration in the config file.
-// This is similar to Profile but uses the config file structure.
-type ProfileConfig struct {
-	Models     []string          `yaml:"models" json:"models" mapstructure:"models"`
-	Provider   string            `yaml:"provider" json:"provider" mapstructure:"provider"`
-	Options    *OptionsConfig    `yaml:"options" json:"options" mapstructure:"options"`
-	Anthropic  *AnthropicConfig  `yaml:"anthropic" json:"anthropic" mapstructure:"anthropic"`
-	OpenRouter *OpenRouterConfig `yaml:"openrouter" json:"openrouter" mapstructure:"openrouter"`
-}
-
 // HTTPConfig contains HTTP server configuration.
 type HTTPConfig struct {
 	Host string `yaml:"host" json:"host" mapstructure:"host"`
@@ -150,6 +133,7 @@ func loadOptionsConfig(v *viper.Viper, key string) *OptionsConfig {
 		DisableCountTokensRequest:  v.GetBool(delimiter.ViperKey(key, "disable_count_tokens_request")),
 		MinMaxTokens:               v.GetInt(delimiter.ViperKey(key, "min_max_tokens")),
 		DisallowedTools:            v.GetStringSlice(delimiter.ViperKey(key, "disallowed_tools")),
+		StreamDataBufferSize:       v.GetInt(delimiter.ViperKey(key, "stream_data_buffer_size")),
 	}
 }
 
@@ -287,6 +271,16 @@ func (o *OptionsConfig) GetDisallowedTools() []string {
 		return []string{}
 	}
 	return o.DisallowedTools
+}
+
+// GetStreamDataBufferSize safely gets the stream data buffer size.
+// This is the maximum size of a single line in the SSE stream.
+// Default is 1MB which should be sufficient for most model responses.
+func (o *OptionsConfig) GetStreamDataBufferSize() int {
+	if o == nil || o.StreamDataBufferSize == 0 {
+		return 1024 * 1024 // 1MB
+	}
+	return o.StreamDataBufferSize
 }
 
 // GetBaseURL safely gets the Anthropic base URL with a default.

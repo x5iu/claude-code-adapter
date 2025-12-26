@@ -438,7 +438,7 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 				if utils.IsContentType(header, "text/event-stream") {
 					// SSE format: use MakeAnthropicStream and MessageBuilder
 					dstMessageBuilder := anthropic.NewMessageBuilder()
-					stream := provider.MakeAnthropicStream(io.NopCloser(&recvBuf))
+					stream := provider.MakeAnthropicStream(prof, io.NopCloser(&recvBuf))
 					for event, err := range stream {
 						if err != nil {
 							slog.Error(fmt.Sprintf("[%d] error parsing SSE response for snapshot: %s", requestID, err))

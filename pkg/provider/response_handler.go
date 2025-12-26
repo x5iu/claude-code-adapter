@@ -16,6 +16,7 @@ import (
 
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
+	"github.com/x5iu/claude-code-adapter/pkg/profile"
 	"github.com/x5iu/claude-code-adapter/pkg/utils"
 )
 
@@ -32,6 +33,7 @@ var providerErrorParser = map[string]func(*http.Response) error{
 }
 
 func (r *ResponseHandler) ScanValues(values ...any) error {
+	ctx := r.Response.Request.Context()
 	for _, dst := range values {
 		if header, isHeader := dst.(*http.Header); isHeader {
 			*header = r.Response.Header
@@ -51,13 +53,13 @@ func (r *ResponseHandler) ScanValues(values ...any) error {
 			return fmt.Errorf("unexpected Content-Type: %s", responseHeader.Get("Content-Type"))
 		}
 		stream := values[0].(*anthropic.MessageStream)
-		*stream = MakeAnthropicStream(r.Response.Body)
+		*stream = MakeAnthropicStream(profile.MustFromContext(ctx), r.Response.Body)
 	case ProviderMethodCreateOpenRouterChatCompletion:
 		if !utils.IsContentType(responseHeader, "text/event-stream") {
 			return fmt.Errorf("unexpected Content-Type: %s", responseHeader.Get("Content-Type"))
 		}
 		stream := values[0].(*openrouter.ChatCompletionStream)
-		*stream = makeOpenRouterStream(r.Response.Body)
+		*stream = makeOpenRouterStream(profile.MustFromContext(ctx), r.Response.Body)
 	default:
 		defer r.Response.Body.Close()
 		switch {
@@ -109,7 +111,8 @@ func unmarshalAnthropicEvent[E anthropic.Event](data []byte) (anthropic.Event, e
 	return event, nil
 }
 
-func MakeAnthropicStream(r io.ReadCloser) anthropic.MessageStream {
+func MakeAnthropicStream(prof *profile.Profile, r io.ReadCloser) anthropic.MessageStream {
+	buffer := make([]byte, prof.Options.GetStreamDataBufferSize())
 	return func(yieldimpl func(anthropic.Event, error) bool) {
 		defer r.Close()
 		var (
@@ -149,6 +152,7 @@ func MakeAnthropicStream(r io.ReadCloser) anthropic.MessageStream {
 			}
 		}()
 		scanner := bufio.NewScanner(r)
+		scanner.Buffer(buffer, cap(buffer))
 		for scanner.Scan() {
 			line := bytes.TrimSpace(scanner.Bytes())
 			if len(line) == 0 {
@@ -180,10 +184,12 @@ func MakeAnthropicStream(r io.ReadCloser) anthropic.MessageStream {
 	}
 }
 
-func makeDataIterator(r io.ReadCloser) iter.Seq2[json.RawMessage, error] {
+func makeDataIterator(prof *profile.Profile, r io.ReadCloser) iter.Seq2[json.RawMessage, error] {
+	buffer := make([]byte, prof.Options.GetStreamDataBufferSize())
 	return func(yield func(json.RawMessage, error) bool) {
 		defer r.Close()
 		scanner := bufio.NewScanner(r)
+		scanner.Buffer(buffer, cap(buffer))
 		for scanner.Scan() {
 			line := bytes.TrimSpace(scanner.Bytes())
 			if len(line) == 0 {
@@ -213,8 +219,8 @@ func makeDataIterator(r io.ReadCloser) iter.Seq2[json.RawMessage, error] {
 	}
 }
 
-func makeOpenRouterStream(r io.ReadCloser) openrouter.ChatCompletionStream {
-	dataIterator := makeDataIterator(r)
+func makeOpenRouterStream(prof *profile.Profile, r io.ReadCloser) openrouter.ChatCompletionStream {
+	dataIterator := makeDataIterator(prof, r)
 	return func(yield func(*openrouter.ChatCompletionChunk, error) bool) {
 		for data, err := range dataIterator {
 			if err != nil {
