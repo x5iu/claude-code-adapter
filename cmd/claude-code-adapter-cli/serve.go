@@ -800,29 +800,28 @@ func onCountTokens(pmPtr *atomic.Pointer[profile.ProfileManager]) func(w http.Re
 			)
 			return
 		}
-		// Extract model from request body to match profile
 		model := gjson.GetBytes(rawBody, "model").String()
 		if model == "" {
 			respondError(w, http.StatusBadRequest, "Missing required field: model")
 			return
 		}
-		// Match profile for the requested model
 		prof, err := pmPtr.Load().Match(model)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, fmt.Sprintf("No profile configured for model %q", model))
 			return
 		}
-		// Get the count_tokens backend URL
-		backendURL, err := url.Parse(prof.Anthropic.GetCountTokensBackend())
+		countTokensBackend := prof.Anthropic.GetCountTokensBackend()
+		backendURL, err := url.Parse(countTokensBackend)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to parse count tokens backend URL: %s", err.Error()))
+			slog.Error(fmt.Sprintf("failed to parse count tokens backend URL %s: %s", countTokensBackend, err.Error()))
 			return
 		}
 		r.Host = backendURL.Host
 		r.Body = io.NopCloser(bytes.NewReader(rawBody))
 		r.ContentLength = int64(len(rawBody))
 		r.Header.Set("Host", backendURL.Host)
-		r.Header.Set("Content-Lengh", strconv.Itoa(len(rawBody)))
+		r.Header.Set("Content-Length", strconv.Itoa(len(rawBody)))
 		r.Header.Set(anthropic.HeaderAPIKey, prof.Anthropic.GetAPIKey())
 		proxy := httputil.NewSingleHostReverseProxy(backendURL)
 		proxy.ServeHTTP(w, r)
