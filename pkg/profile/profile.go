@@ -32,6 +32,7 @@ type OptionsConfig struct {
 	DisableCountTokensRequest  bool              `yaml:"disable_count_tokens_request" json:"disable_count_tokens_request" mapstructure:"disable_count_tokens_request"`
 	MinMaxTokens               int               `yaml:"min_max_tokens" json:"min_max_tokens" mapstructure:"min_max_tokens"`
 	DisallowedTools            []string          `yaml:"disallowed_tools" json:"disallowed_tools" mapstructure:"disallowed_tools"`
+	StreamDataBufferSize       int               `yaml:"stream_data_buffer_size" json:"stream_data_buffer_size" mapstructure:"stream_data_buffer_size"`
 }
 
 // ReasoningConfig contains options for reasoning/thinking mode.

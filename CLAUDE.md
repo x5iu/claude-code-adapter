@@ -40,17 +40,22 @@ go fmt ./... && go vet ./... && go test ./...
 
 ## Architecture
 
+### Endpoints
+- `/v1/messages` - Main Anthropic Messages API endpoint
+- `/v1/messages/count_tokens` - Token counting (reverse proxy to Anthropic)
+
 ### Request Flow
-1. Server (`cmd/claude-code-adapter-cli/serve.go`) receives Anthropic Messages API request at `/v1/messages`
+1. Server (`cmd/claude-code-adapter-cli/serve.go`) receives request at `/v1/messages`
 2. Profile System (`pkg/profile`) matches model to configuration (first match wins)
-3. Format Adapter (`pkg/adapter/convert_request.go`) converts to OpenRouter format if needed
-4. Provider (`pkg/provider`) sends request to upstream (OpenRouter or Anthropic)
-5. Stream Adapter (`pkg/adapter/convert_stream.go`) converts response back to Anthropic format
+3. Provider auto-selection: forces Anthropic when server tools (computer/bash/text_editor) are present
+4. Format Adapter (`pkg/adapter/convert_request.go`) converts to OpenRouter format if needed
+5. Provider (`pkg/provider`) sends request to upstream
+6. Stream Adapter (`pkg/adapter/convert_stream.go`) converts response back to Anthropic format
 
 ### Core Components
 | Package | Purpose |
 |---------|---------|
-| `pkg/profile` | Model-to-config matching via prefix patterns (`claude-*`) |
+| `pkg/profile` | Model-to-config matching via prefix patterns (`claude-*`); supports hot-reload |
 | `pkg/provider` | API interfaces with `defc` annotations; `provider_impl.go` is auto-generated |
 | `pkg/adapter` | Bidirectional format conversion (request & stream) |
 | `pkg/datatypes/anthropic` | Anthropic API types |
@@ -58,12 +63,13 @@ go fmt ./... && go vet ./... && go test ./...
 | `pkg/snapshot` | Request/response recording to JSONL |
 
 ### Profile Configuration
-Profiles in `config.yaml` specify: `models` (patterns), `provider` (openrouter/anthropic), and provider-specific settings. See `config.template.yaml` for full options.
+Profiles in `config.yaml` specify: `models` (patterns), `provider` (openrouter/anthropic), and provider-specific settings. Config file changes are auto-reloaded via `fsnotify`. See `config.template.yaml` for full options.
 
 ### Configuration Precedence
 1. CLI flags → 2. Environment variables → 3. `config.yaml` → 4. Defaults
 
 ## Key Behaviors
-- **Auto Provider Selection**: Uses Anthropic provider when server tools (computer/bash) are present
+- **Auto Provider Selection**: Uses Anthropic provider when server tools (computer/bash/text_editor) are present, regardless of profile setting
 - **Reasoning Formats**: `anthropic-claude-v1`, `openai-responses-v1`, `google-gemini-v1`
+- **Tool Filtering**: `disallowed_tools` option removes specified tools before dispatch
 - **Snapshots**: `--snapshot jsonl:path.jsonl` records traffic (contains sensitive data)
