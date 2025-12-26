@@ -82,6 +82,7 @@ func LoadFromViper(v *viper.Viper) (*ProfileManager, error) {
 		if p.Anthropic != nil {
 			p.Anthropic.APIKey = ExpandEnv(p.Anthropic.APIKey)
 			p.Anthropic.BaseURL = ExpandEnv(p.Anthropic.BaseURL)
+			p.Anthropic.CountTokensBackend = ExpandEnv(p.Anthropic.CountTokensBackend)
 		}
 		if p.OpenRouter != nil {
 			p.OpenRouter.APIKey = ExpandEnv(p.OpenRouter.APIKey)
@@ -175,6 +176,7 @@ func loadAnthropicConfig(v *viper.Viper, key string) *AnthropicConfig {
 		BaseURL:                        v.GetString(delimiter.ViperKey(key, "base_url")),
 		APIKey:                         v.GetString(delimiter.ViperKey(key, "api_key")),
 		Version:                        v.GetString(delimiter.ViperKey(key, "version")),
+		CountTokensBackend:             v.GetString(delimiter.ViperKey(key, "count_tokens_backend")),
 	}
 }
 
@@ -341,6 +343,15 @@ func (a *AnthropicConfig) GetDisableWebSearchBlockedDomains() bool {
 		return false
 	}
 	return a.DisableWebSearchBlockedDomains
+}
+
+// GetCountTokensBackend safely gets the count tokens backend URL.
+// If not set, returns the base URL.
+func (a *AnthropicConfig) GetCountTokensBackend() string {
+	if a == nil || a.CountTokensBackend == "" {
+		return a.GetBaseURL()
+	}
+	return strings.TrimSuffix(a.CountTokensBackend, "/")
 }
 
 // GetBaseURL safely gets the OpenRouter base URL with a default.

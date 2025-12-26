@@ -75,6 +75,8 @@ profiles:
       base_url: "https://api.anthropic.com"
       # Anthropic API version header.
       version: "2023-06-01"
+      # Backend URL for /v1/messages/count_tokens endpoint. If not set, uses base_url.
+      count_tokens_backend: "https://api.anthropic.com/"
 
     openrouter:
       # API key for OpenRouter (use ${ENV_VAR} syntax for environment variables)
@@ -116,6 +118,7 @@ profiles:
       force_thinking: false
       base_url: "https://api.anthropic.com"
       version: "2023-06-01"
+      count_tokens_backend: "https://api.anthropic.com/"
 
     openrouter:
       api_key: "${OPENROUTER_API_KEY}"
@@ -153,6 +156,7 @@ profiles:
       force_thinking: false
       base_url: "https://api.anthropic.com"
       version: "2023-06-01"
+      count_tokens_backend: "https://api.anthropic.com/"
 
     openrouter:
       api_key: "${OPENROUTER_API_KEY}"
@@ -187,6 +191,7 @@ profiles:
       force_thinking: false
       base_url: "https://api.anthropic.com"
       version: "2023-06-01"
+      count_tokens_backend: "https://api.anthropic.com/"
 
     openrouter:
       api_key: "${OPENROUTER_API_KEY}"
@@ -221,6 +226,7 @@ profiles:
       force_thinking: false
       base_url: "https://api.anthropic.com"
       version: "2023-06-01"
+      count_tokens_backend: "https://api.anthropic.com/"
 
     openrouter:
       api_key: "${OPENROUTER_API_KEY}"
