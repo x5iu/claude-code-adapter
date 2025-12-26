@@ -39,10 +39,8 @@ func ConvertAnthropicRequestToOpenRouterRequest(
 		TopP:        src.TopP,
 		Usage:       &openrouter.ChatCompletionUsageOptions{Include: true},
 	}
-	if modelMapper := prof.Options.GetModels(); modelMapper != nil {
-		if targetModel, ok := modelMapper[dst.Model]; ok {
-			dst.Model = targetModel
-		}
+	if targetModel, ok := prof.Options.GetModels()[dst.Model]; ok {
+		dst.Model = targetModel
 	}
 	if metadata := src.Metadata; metadata != nil && metadata.UserID != "" {
 		dst.User = metadata.UserID
