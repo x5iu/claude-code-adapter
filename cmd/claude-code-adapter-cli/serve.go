@@ -50,6 +50,11 @@ func newServeCommand() *cobra.Command {
 		Short: "Start claude-code-adapter-cli http server",
 		Args:  cobra.NoArgs,
 		PreRun: func(*cobra.Command, []string) {
+			viper.SetOptions(viper.WithLogger(slog.Default()))
+			viper.SetConfigName("config")
+			viper.SetConfigType("yaml")
+			viper.AddConfigPath("$HOME/.claude-code-adapter/")
+			viper.AddConfigPath(".")
 			if configFile != "" {
 				viper.SetConfigFile(configFile)
 			}
@@ -80,11 +85,6 @@ func newServeCommand() *cobra.Command {
 	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("http", "port"), flags.Lookup("port")))
 	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("http", "host"), flags.Lookup("host")))
 	cobra.CheckErr(viper.BindPFlag(delimiter.ViperKey("snapshot"), flags.Lookup("snapshot")))
-	viper.SetOptions(viper.WithLogger(slog.Default()))
-	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath("$HOME/.claude-code-adapter/")
-	viper.AddConfigPath(".")
 	return cmd
 }
 
@@ -393,6 +393,12 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 					rawBody, err = sjson.SetBytes(rawBody, "stream", true)
 					if err != nil {
 						panic(fmt.Errorf("unreachable: %s", err.Error()))
+					}
+					if targetModel, ok := prof.Options.GetModels()[req.Model]; ok {
+						rawBody, err = sjson.SetBytes(rawBody, "model", targetModel)
+						if err != nil {
+							panic(fmt.Errorf("unreachable: %s", err.Error()))
+						}
 					}
 					options = append(options, provider.ReplaceBody(rawBody))
 				}
