@@ -379,6 +379,12 @@ func onMessages(cmd *cobra.Command, prov provider.Provider, rec snapshot.Recorde
 				sn.ResponseHeader = snapshot.Header(header)
 			}()
 			if enablePassThroughMode {
+				if targetModel, ok := prof.Options.GetModels()[req.Model]; ok {
+					rawBody, err = sjson.SetBytes(rawBody, "model", targetModel)
+					if err != nil {
+						panic(fmt.Errorf("unreachable: %s", err.Error()))
+					}
+				}
 				reader, header, err = prov.MakeAnthropicMessagesRequest(ctx,
 					utils.NewResettableReader(rawBody),
 					provider.WithQuery("beta", "true"),
