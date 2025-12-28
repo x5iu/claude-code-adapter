@@ -30,9 +30,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            VERSION="${{ inputs.version }}"
+          if [ -n "${INPUT_VERSION}" ]; then
+            # Validate version format to prevent command injection
+            if ! echo "${INPUT_VERSION}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.+-]+)?$'; then
+              echo "Error: Invalid version format '${INPUT_VERSION}'. Expected vX.Y.Z (e.g. v0.8.3)"
+              exit 1
+            fi
+            VERSION="${INPUT_VERSION}"
             echo "Using specified version: ${VERSION}"
           else
             VERSION=$(gh release view --json tagName -q '.tagName')
