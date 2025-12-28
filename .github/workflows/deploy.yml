@@ -1,13 +1,10 @@
 name: Deploy
 
 on:
-  workflow_run:
-    workflows: ["Release"]
-    types: [completed]
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to deploy (e.g. v0.8.3), leave empty for latest'
+        description: "Version to deploy (e.g. v0.8.3), leave empty for latest"
         required: false
         type: string
 
@@ -22,7 +19,6 @@ jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     environment: api.claude-code-adapter.com
     steps:
       - name: Determine version
@@ -72,17 +68,24 @@ jobs:
           SSH_PORT: ${{ secrets.DEPLOY_PORT || 22 }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           SERVICE_NAME: ${{ secrets.SERVICE_NAME }}
-          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          SSH_OPTS="-i $SSH_KEY -p $SSH_PORT -o StrictHostKeyChecking=yes -o ConnectTimeout=30"
-          SSH_TARGET="$SSH_USER@$SSH_HOST"
+          VERSION="${{ steps.version.outputs.version }}"
           ARTIFACT_NAME="${{ env.BINARY_NAME }}-linux-amd64-${VERSION}"
+          SSH_TARGET="$SSH_USER@$SSH_HOST"
+
+          set -x
+
+          echo "==> Checking if binary exists..."
+          if [ ! -f "${ARTIFACT_NAME}" ]; then
+            echo "Error: Binary '${ARTIFACT_NAME}' not found"
+            exit 1
+          fi
 
           echo "==> Uploading binary..."
-          scp $SSH_OPTS "${ARTIFACT_NAME}" $SSH_TARGET:/tmp/${{ env.BINARY_NAME }}.new
+          scp -i $SSH_KEY -P $SSH_PORT -o StrictHostKeyChecking=yes -o ConnectTimeout=30 "${ARTIFACT_NAME}" $SSH_TARGET:/tmp/${{ env.BINARY_NAME }}.new
 
           echo "==> Deploying on server..."
-          ssh $SSH_OPTS $SSH_TARGET << DEPLOY_SCRIPT
+          ssh -i $SSH_KEY -p $SSH_PORT -o StrictHostKeyChecking=yes -o ConnectTimeout=30 $SSH_TARGET << DEPLOY_SCRIPT
             set -e
 
             BINARY_NAME="${{ env.BINARY_NAME }}"
