@@ -1,0 +1,218 @@
+name: Release & Deploy
+
+on:
+  workflow_run:
+    workflows: ["Go Test"]
+    types: [completed]
+    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-deploy
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: "1.24"
+  BINARY_NAME: claude-code-adapter
+  BUILD_PATH: ./cmd/claude-code-adapter-cli
+  VERSION_FILE: cmd/claude-code-adapter-cli/claude-code-adapter.go
+
+jobs:
+  check-version:
+    name: Check Version
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      should-release: ${{ steps.check.outputs.should-release }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Extract version from source
+        id: version
+        run: |
+          VERSION=$(grep -oP 'Version:\s*"\K[^"]+' ${{ env.VERSION_FILE }})
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Detected version: ${VERSION}"
+
+      - name: Check if tag exists
+        id: check
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if git rev-parse "refs/tags/${VERSION}" >/dev/null 2>&1; then
+            echo "Tag ${VERSION} already exists, skipping release"
+            echo "should-release=false" >> $GITHUB_OUTPUT
+          else
+            echo "Tag ${VERSION} does not exist, will create release"
+            echo "should-release=true" >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    name: Build
+    needs: check-version
+    if: ${{ needs.check-version.outputs.should-release == 'true' }}
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-name: ${{ steps.build.outputs.artifact-name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build binary
+        id: build
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+            -ldflags="-s -w -X main.version=${VERSION}" \
+            -o ${{ env.BINARY_NAME }} \
+            ${{ env.BUILD_PATH }}
+
+          file ${{ env.BINARY_NAME }}
+          ls -lh ${{ env.BINARY_NAME }}
+
+          echo "artifact-name=${{ env.BINARY_NAME }}-linux-amd64-${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.build.outputs.artifact-name }}
+          path: ${{ env.BINARY_NAME }}
+          retention-days: 7
+
+  release:
+    name: Create Release
+    needs: [check-version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release-created: ${{ steps.release.outputs.release-created }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact-name }}
+
+      - name: Create tag and release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          ARTIFACT_NAME="${{ needs.build.outputs.artifact-name }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git tag -a "${VERSION}" -m "Release ${VERSION}"
+          git push origin "${VERSION}"
+
+          gh release create "${VERSION}" \
+            --title "Release ${VERSION}" \
+            --generate-notes \
+            "${{ env.BINARY_NAME }}#${ARTIFACT_NAME}"
+
+          echo "release-created=true" >> $GITHUB_OUTPUT
+          echo "Created release ${VERSION}"
+
+  deploy:
+    name: Deploy
+    needs: [check-version, build, release]
+    if: ${{ needs.release.outputs.release-created == 'true' }}
+    runs-on: ubuntu-latest
+    environment: api.claude-code-adapter.com
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact-name }}
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p ${{ secrets.DEPLOY_PORT || 22 }} ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy to server
+        env:
+          SSH_KEY: ~/.ssh/deploy_key
+          SSH_USER: ${{ secrets.DEPLOY_USER }}
+          SSH_HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_PORT: ${{ secrets.DEPLOY_PORT || 22 }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          SERVICE_NAME: ${{ secrets.SERVICE_NAME }}
+        run: |
+          SSH_OPTS="-i $SSH_KEY -p $SSH_PORT -o StrictHostKeyChecking=yes -o ConnectTimeout=30"
+          SSH_TARGET="$SSH_USER@$SSH_HOST"
+
+          echo "==> Uploading binary..."
+          scp $SSH_OPTS ${{ env.BINARY_NAME }} $SSH_TARGET:/tmp/${{ env.BINARY_NAME }}.new
+
+          echo "==> Deploying on server..."
+          ssh $SSH_OPTS $SSH_TARGET << DEPLOY_SCRIPT
+            set -e
+
+            BINARY_NAME="${{ env.BINARY_NAME }}"
+            DEPLOY_PATH="${DEPLOY_PATH}"
+            SERVICE_NAME="${SERVICE_NAME}"
+
+            mkdir -p \$(dirname \$DEPLOY_PATH)
+
+            if [ -f "\$DEPLOY_PATH" ]; then
+              cp "\$DEPLOY_PATH" "\${DEPLOY_PATH}.backup"
+              echo "Backed up existing binary"
+            fi
+
+            echo "Stopping service..."
+            systemctl stop \$SERVICE_NAME || true
+
+            mv /tmp/\${BINARY_NAME}.new \$DEPLOY_PATH
+            chmod +x \$DEPLOY_PATH
+
+            echo "Starting service..."
+            systemctl start \$SERVICE_NAME
+
+            sleep 3
+            if systemctl is-active --quiet \$SERVICE_NAME; then
+              echo "Service started successfully"
+              systemctl status \$SERVICE_NAME --no-pager
+            else
+              echo "ERROR: Service failed to start!"
+              systemctl status \$SERVICE_NAME --no-pager || true
+              journalctl -u \$SERVICE_NAME -n 50 --no-pager || true
+              exit 1
+            fi
+          DEPLOY_SCRIPT
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
+
+      - name: Deployment summary
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** ${VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.event.workflow_run.head_sha || github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** main" >> $GITHUB_STEP_SUMMARY
+          echo "- **Service:** ${{ secrets.SERVICE_NAME }}" >> $GITHUB_STEP_SUMMARY
