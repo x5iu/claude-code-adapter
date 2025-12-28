@@ -20,6 +20,7 @@ type Profile struct {
 	Options    *OptionsConfig    `yaml:"options" json:"options" mapstructure:"options"`
 	Anthropic  *AnthropicConfig  `yaml:"anthropic" json:"anthropic" mapstructure:"anthropic"`
 	OpenRouter *OpenRouterConfig `yaml:"openrouter" json:"openrouter" mapstructure:"openrouter"`
+	OpenAI     *OpenAIConfig     `yaml:"openai" json:"openai" mapstructure:"openai"`
 }
 
 // OptionsConfig contains general options for request processing.
@@ -60,6 +61,12 @@ type OpenRouterConfig struct {
 	APIKey               string            `yaml:"api_key" json:"api_key" mapstructure:"api_key"`
 	ModelReasoningFormat map[string]string `yaml:"model_reasoning_format" json:"model_reasoning_format" mapstructure:"model_reasoning_format"`
 	AllowedProviders     []string          `yaml:"allowed_providers" json:"allowed_providers" mapstructure:"allowed_providers"`
+}
+
+// OpenAIConfig contains OpenAI-specific configuration.
+type OpenAIConfig struct {
+	BaseURL string `yaml:"base_url" json:"base_url" mapstructure:"base_url"`
+	APIKey  string `yaml:"api_key" json:"api_key" mapstructure:"api_key"`
 }
 
 // ProfileManager manages a collection of profiles and provides model-to-profile matching.

@@ -44,6 +44,16 @@ func getConfigFromContext(ctx context.Context, keys ...string) string {
 		case "base_url":
 			return prof.OpenRouter.GetBaseURL()
 		}
+	case "openai":
+		if prof.OpenAI == nil {
+			return ""
+		}
+		switch key {
+		case "api_key":
+			return prof.OpenAI.GetAPIKey()
+		case "base_url":
+			return prof.OpenAI.GetBaseURL()
+		}
 	}
 	return ""
 }

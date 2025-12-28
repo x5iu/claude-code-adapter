@@ -8,6 +8,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
+	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openai"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
 	"github.com/x5iu/claude-code-adapter/pkg/profile"
 )
@@ -2573,5 +2574,200 @@ func TestCanonicalOpenRouterMessages_UnknownFormat_WithSignatureWithoutDelimiter
 	}
 	if encrypted.Data != "signature_without_delimiter" {
 		t.Errorf("Expected Data to contain whole signature, got %q", encrypted.Data)
+	}
+}
+
+// testOpenAIProfile creates a test profile for OpenAI provider
+func testOpenAIProfile() *profile.Profile {
+	return &profile.Profile{
+		Name:     "test-openai",
+		Provider: "openai",
+		Options: &profile.OptionsConfig{
+			Strict:                    false,
+			ContextWindowResizeFactor: 1.0,
+		},
+		OpenAI: &profile.OpenAIConfig{
+			BaseURL: "https://api.openai.com",
+		},
+	}
+}
+
+// testOpenAICtx creates a context with an OpenAI test profile
+func testOpenAICtx() context.Context {
+	return profile.WithProfile(context.Background(), testOpenAIProfile())
+}
+
+func TestConvertAnthropicRequestToOpenAIRequest_SystemTextOnly(t *testing.T) {
+	// When system messages contain only text, they should be converted to instructions
+	src := &anthropic.GenerateMessageRequest{
+		Model:     "gpt-4o",
+		MaxTokens: 500,
+		System: anthropic.MessageContents{
+			{Type: anthropic.MessageContentTypeText, Text: "You are a helpful assistant."},
+			{Type: anthropic.MessageContentTypeText, Text: "Always be polite."},
+		},
+		Messages: []*anthropic.Message{
+			{
+				Role: anthropic.MessageRoleUser,
+				Content: anthropic.MessageContents{
+					{Type: anthropic.MessageContentTypeText, Text: "Hello"},
+				},
+			},
+		},
+	}
+
+	got := ConvertAnthropicRequestToOpenAIRequest(testOpenAICtx(), src)
+
+	// System should be converted to Instructions (text-only)
+	expectedInstructions := "You are a helpful assistant.\n\nAlways be polite."
+	if got.Instructions != expectedInstructions {
+		t.Errorf("Expected Instructions %q, got %q", expectedInstructions, got.Instructions)
+	}
+
+	// Input should only have user message, no system message
+	if len(got.Input) != 1 {
+		t.Errorf("Expected 1 input item (user message only), got %d", len(got.Input))
+	}
+
+	// Verify the input is a user message, not system message
+	if got.Input[0].Message == nil {
+		t.Fatal("Expected message in input")
+	}
+	if got.Input[0].Message.Role != openai.ResponseMessageRoleUser {
+		t.Errorf("Expected user role, got %s", got.Input[0].Message.Role)
+	}
+}
+
+func TestConvertAnthropicRequestToOpenAIRequest_SystemWithImage(t *testing.T) {
+	// When system messages contain images, they should be converted to input with system role
+	src := &anthropic.GenerateMessageRequest{
+		Model:     "gpt-4o",
+		MaxTokens: 500,
+		System: anthropic.MessageContents{
+			{Type: anthropic.MessageContentTypeText, Text: "You are a helpful assistant."},
+			{
+				Type: anthropic.MessageContentTypeImage,
+				Source: &anthropic.MessageContentSource{
+					Type:      "base64",
+					MediaType: "image/png",
+					Data:      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+				},
+			},
+		},
+		Messages: []*anthropic.Message{
+			{
+				Role: anthropic.MessageRoleUser,
+				Content: anthropic.MessageContents{
+					{Type: anthropic.MessageContentTypeText, Text: "Hello"},
+				},
+			},
+		},
+	}
+
+	got := ConvertAnthropicRequestToOpenAIRequest(testOpenAICtx(), src)
+
+	// Instructions should be empty when system contains non-text content
+	if got.Instructions != "" {
+		t.Errorf("Expected empty Instructions, got %q", got.Instructions)
+	}
+
+	// Input should have 2 items: system message, then user message
+	if len(got.Input) != 2 {
+		t.Fatalf("Expected 2 input items, got %d", len(got.Input))
+	}
+
+	// First input should be system message
+	systemInput := got.Input[0]
+	if systemInput.Message == nil {
+		t.Fatal("Expected system message in first input")
+	}
+	if systemInput.Message.Role != openai.ResponseMessageRoleSystem {
+		t.Errorf("Expected system role for first input, got %s", systemInput.Message.Role)
+	}
+
+	// Verify system message content includes both text and image
+	if len(systemInput.Message.Content) != 2 {
+		t.Fatalf("Expected 2 content items in system message, got %d", len(systemInput.Message.Content))
+	}
+
+	// First content should be text
+	if systemInput.Message.Content[0].Text == nil {
+		t.Error("Expected text content as first item")
+	} else if systemInput.Message.Content[0].Text.Text != "You are a helpful assistant." {
+		t.Errorf("Expected text 'You are a helpful assistant.', got %q", systemInput.Message.Content[0].Text.Text)
+	}
+
+	// Second content should be image
+	if systemInput.Message.Content[1].Image == nil {
+		t.Error("Expected image content as second item")
+	} else if systemInput.Message.Content[1].Image.ImageUrl == "" {
+		t.Error("Expected non-empty image URL")
+	}
+
+	// Second input should be user message
+	userInput := got.Input[1]
+	if userInput.Message == nil {
+		t.Fatal("Expected user message in second input")
+	}
+	if userInput.Message.Role != openai.ResponseMessageRoleUser {
+		t.Errorf("Expected user role for second input, got %s", userInput.Message.Role)
+	}
+}
+
+func TestConvertAnthropicRequestToOpenAIRequest_EmptySystem(t *testing.T) {
+	// Empty system should result in empty instructions and no system input
+	src := &anthropic.GenerateMessageRequest{
+		Model:     "gpt-4o",
+		MaxTokens: 500,
+		System:    anthropic.MessageContents{},
+		Messages: []*anthropic.Message{
+			{
+				Role: anthropic.MessageRoleUser,
+				Content: anthropic.MessageContents{
+					{Type: anthropic.MessageContentTypeText, Text: "Hello"},
+				},
+			},
+		},
+	}
+
+	got := ConvertAnthropicRequestToOpenAIRequest(testOpenAICtx(), src)
+
+	// Instructions should be empty
+	if got.Instructions != "" {
+		t.Errorf("Expected empty Instructions, got %q", got.Instructions)
+	}
+
+	// Input should only have user message
+	if len(got.Input) != 1 {
+		t.Errorf("Expected 1 input item (user message only), got %d", len(got.Input))
+	}
+}
+
+func TestConvertAnthropicRequestToOpenAIRequest_NilSystem(t *testing.T) {
+	// Nil system should result in empty instructions and no system input
+	src := &anthropic.GenerateMessageRequest{
+		Model:     "gpt-4o",
+		MaxTokens: 500,
+		System:    nil,
+		Messages: []*anthropic.Message{
+			{
+				Role: anthropic.MessageRoleUser,
+				Content: anthropic.MessageContents{
+					{Type: anthropic.MessageContentTypeText, Text: "Hello"},
+				},
+			},
+		},
+	}
+
+	got := ConvertAnthropicRequestToOpenAIRequest(testOpenAICtx(), src)
+
+	// Instructions should be empty
+	if got.Instructions != "" {
+		t.Errorf("Expected empty Instructions, got %q", got.Instructions)
+	}
+
+	// Input should only have user message
+	if len(got.Input) != 1 {
+		t.Errorf("Expected 1 input item (user message only), got %d", len(got.Input))
 	}
 }

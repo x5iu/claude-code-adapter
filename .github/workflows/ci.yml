@@ -38,3 +38,5 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.UNIFIED_API_KEY }}
           OPENROUTER_BASE_URL: ${{ secrets.OPENROUTER_BASE_URL }}
           OPENROUTER_API_KEY: ${{ secrets.UNIFIED_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.UNIFIED_API_KEY }}

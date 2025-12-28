@@ -60,6 +60,7 @@ func LoadFromViper(v *viper.Viper) (*ProfileManager, error) {
 			Options:    loadOptionsConfig(v, delimiter.ViperKey(key, "options")),
 			Anthropic:  loadAnthropicConfig(v, delimiter.ViperKey(key, "anthropic")),
 			OpenRouter: loadOpenRouterConfig(v, delimiter.ViperKey(key, "openrouter")),
+			OpenAI:     loadOpenAIConfig(v, delimiter.ViperKey(key, "openai")),
 		}
 		// Expand environment variables in API keys and URLs
 		if p.Anthropic != nil {
@@ -70,6 +71,10 @@ func LoadFromViper(v *viper.Viper) (*ProfileManager, error) {
 		if p.OpenRouter != nil {
 			p.OpenRouter.APIKey = ExpandEnv(p.OpenRouter.APIKey)
 			p.OpenRouter.BaseURL = ExpandEnv(p.OpenRouter.BaseURL)
+		}
+		if p.OpenAI != nil {
+			p.OpenAI.APIKey = ExpandEnv(p.OpenAI.APIKey)
+			p.OpenAI.BaseURL = ExpandEnv(p.OpenAI.BaseURL)
 		}
 		pm.AddProfile(p)
 	}
@@ -173,6 +178,16 @@ func loadOpenRouterConfig(v *viper.Viper, key string) *OpenRouterConfig {
 		APIKey:               v.GetString(delimiter.ViperKey(key, "api_key")),
 		ModelReasoningFormat: v.GetStringMapString(delimiter.ViperKey(key, "model_reasoning_format")),
 		AllowedProviders:     v.GetStringSlice(delimiter.ViperKey(key, "allowed_providers")),
+	}
+}
+
+func loadOpenAIConfig(v *viper.Viper, key string) *OpenAIConfig {
+	if !v.IsSet(key) {
+		return nil
+	}
+	return &OpenAIConfig{
+		BaseURL: v.GetString(delimiter.ViperKey(key, "base_url")),
+		APIKey:  v.GetString(delimiter.ViperKey(key, "api_key")),
 	}
 }
 
@@ -378,4 +393,20 @@ func (o *OpenRouterConfig) GetAllowedProviders() []string {
 		return nil
 	}
 	return o.AllowedProviders
+}
+
+// GetBaseURL safely gets the OpenAI base URL with a default.
+func (o *OpenAIConfig) GetBaseURL() string {
+	if o == nil || o.BaseURL == "" {
+		return "https://api.openai.com"
+	}
+	return strings.TrimSuffix(o.BaseURL, "/")
+}
+
+// GetAPIKey safely gets the OpenAI API key.
+func (o *OpenAIConfig) GetAPIKey() string {
+	if o == nil {
+		return ""
+	}
+	return o.APIKey
 }

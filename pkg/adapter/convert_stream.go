@@ -8,6 +8,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/anthropic"
+	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openai"
 	"github.com/x5iu/claude-code-adapter/pkg/datatypes/openrouter"
 	"github.com/x5iu/claude-code-adapter/pkg/profile"
 )
@@ -16,6 +17,7 @@ type ConvertStreamOptions struct {
 	InputTokens                     int64
 	OpenRouterProvider              *string
 	OpenRouterChatCompletionBuilder *openrouter.ChatCompletionBuilder
+	OpenAIResponseBuilder           *openai.ResponseBuilder
 }
 
 type ConvertStreamOption func(*ConvertStreamOptions)
@@ -35,6 +37,12 @@ func ExtractOpenRouterProvider(provider *string) ConvertStreamOption {
 func ExtractOpenRouterChatCompletionBuilder(builder *openrouter.ChatCompletionBuilder) ConvertStreamOption {
 	return func(o *ConvertStreamOptions) {
 		o.OpenRouterChatCompletionBuilder = builder
+	}
+}
+
+func ExtractOpenAIResponseBuilder(builder *openai.ResponseBuilder) ConvertStreamOption {
+	return func(o *ConvertStreamOptions) {
+		o.OpenAIResponseBuilder = builder
 	}
 }
 
@@ -377,4 +385,417 @@ func reasoningDetailsContainsReasoningTypes(
 		}
 	}
 	return false
+}
+
+func ConvertOpenAIStreamToAnthropicStream(
+	ctx context.Context,
+	stream openai.ResponseStream,
+	options ...ConvertStreamOption,
+) anthropic.MessageStream {
+	prof, _ := profile.FromContext(ctx)
+	convertOptions := &ConvertStreamOptions{}
+	for _, applyOption := range options {
+		applyOption(convertOptions)
+	}
+	contextWindowResizeFactor := prof.Options.GetContextWindowResizeFactor()
+	return func(yield func(anthropic.Event, error) bool) {
+		var (
+			startOnce  sync.Once
+			responseID string
+			model      string
+			blockIndex int
+			deltaType  anthropic.MessageContentDeltaType
+			toolCallID string
+			stopReason anthropic.StopReason
+			usage      *anthropic.Usage
+		)
+		for event, err := range stream {
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+			if convertOptions.OpenAIResponseBuilder != nil {
+				convertOptions.OpenAIResponseBuilder.Add(event)
+			}
+			switch e := event.(type) {
+			case *openai.ResponseCreatedEvent:
+				responseID = e.Response.ID
+				model = e.Response.Model
+				startOnce.Do(func() {
+					yield(&anthropic.EventMessageStart{
+						Type: anthropic.EventTypeMessageStart,
+						Message: &anthropic.Message{
+							ID:    responseID,
+							Type:  anthropic.MessageTypeMessage,
+							Role:  anthropic.MessageRoleAssistant,
+							Model: model,
+							Usage: &anthropic.Usage{
+								InputTokens:  int64(float64(convertOptions.InputTokens) * contextWindowResizeFactor),
+								OutputTokens: 1,
+							},
+						},
+					}, nil)
+				})
+			case *openai.ResponseInProgressEvent:
+				// No action needed
+			case *openai.ResponseOutputItemAddedEvent:
+				// Handle output item based on its type
+				if e.Item != nil {
+					if msg := e.Item.Message; msg != nil {
+						// Message item - we'll handle content deltas separately
+					} else if fc := e.Item.FunctionCall; fc != nil {
+						// Function call started
+						if deltaType != "" {
+							if !yield(&anthropic.EventContentBlockStop{
+								Type:  anthropic.EventTypeContentBlockStop,
+								Index: blockIndex,
+							}, nil) {
+								return
+							}
+							blockIndex++
+						}
+						deltaType = anthropic.MessageContentDeltaTypeInputJSONDelta
+						toolCallID = fc.CallID
+						if !yield(&anthropic.EventContentBlockStart{
+							Type:  anthropic.EventTypeContentBlockStart,
+							Index: blockIndex,
+							ContentBlock: &anthropic.MessageContent{
+								Type:  anthropic.MessageContentTypeToolUse,
+								ID:    fc.CallID,
+								Name:  fc.Name,
+								Input: json.RawMessage("{}"),
+							},
+						}, nil) {
+							return
+						}
+					} else if r := e.Item.Reasoning; r != nil {
+						// Reasoning item started
+						if deltaType != "" {
+							if !yield(&anthropic.EventContentBlockStop{
+								Type:  anthropic.EventTypeContentBlockStop,
+								Index: blockIndex,
+							}, nil) {
+								return
+							}
+							blockIndex++
+						}
+						deltaType = anthropic.MessageContentDeltaTypeThinkingDelta
+						if !yield(&anthropic.EventContentBlockStart{
+							Type:  anthropic.EventTypeContentBlockStart,
+							Index: blockIndex,
+							ContentBlock: &anthropic.MessageContent{
+								Type: anthropic.MessageContentTypeThinking,
+							},
+						}, nil) {
+							return
+						}
+					}
+				}
+			case *openai.ResponseOutputItemDoneEvent:
+				// Output item completed - no additional action needed
+			case *openai.ResponseContentPartAddedEvent:
+				// Content part added - we'll handle deltas
+				if e.Part != nil {
+					// Part is ResponseMessageContentText, check its type
+					if e.Part.Type == openai.ResponseMessageContentTypeInputText ||
+						e.Part.Type == openai.ResponseMessageContentTypeOutputText {
+						// Text content started
+						if deltaType != anthropic.MessageContentDeltaTypeTextDelta {
+							if deltaType != "" {
+								if !yield(&anthropic.EventContentBlockStop{
+									Type:  anthropic.EventTypeContentBlockStop,
+									Index: blockIndex,
+								}, nil) {
+									return
+								}
+								blockIndex++
+							}
+							deltaType = anthropic.MessageContentDeltaTypeTextDelta
+							if !yield(&anthropic.EventContentBlockStart{
+								Type:  anthropic.EventTypeContentBlockStart,
+								Index: blockIndex,
+								ContentBlock: &anthropic.MessageContent{
+									Type: anthropic.MessageContentTypeText,
+								},
+							}, nil) {
+								return
+							}
+						}
+					}
+				}
+			case *openai.ResponseContentPartDoneEvent:
+				// Content part done - no additional action needed
+			case *openai.ResponseTextDeltaEvent:
+				// Text delta
+				if e.Delta != "" {
+					if deltaType != anthropic.MessageContentDeltaTypeTextDelta {
+						if deltaType != "" {
+							if !yield(&anthropic.EventContentBlockStop{
+								Type:  anthropic.EventTypeContentBlockStop,
+								Index: blockIndex,
+							}, nil) {
+								return
+							}
+							blockIndex++
+						}
+						deltaType = anthropic.MessageContentDeltaTypeTextDelta
+						if !yield(&anthropic.EventContentBlockStart{
+							Type:  anthropic.EventTypeContentBlockStart,
+							Index: blockIndex,
+							ContentBlock: &anthropic.MessageContent{
+								Type: anthropic.MessageContentTypeText,
+							},
+						}, nil) {
+							return
+						}
+					}
+					if !yield(&anthropic.EventContentBlockDelta{
+						Type:  anthropic.EventTypeContentBlockDelta,
+						Index: blockIndex,
+						Delta: &anthropic.MessageContentDelta{
+							Type: anthropic.MessageContentDeltaTypeTextDelta,
+							Text: e.Delta,
+						},
+					}, nil) {
+						return
+					}
+				}
+			case *openai.ResponseTextDoneEvent:
+				// Text done - no additional action needed
+			case *openai.ResponseReasoningTextDeltaEvent:
+				// Reasoning text delta
+				if e.Delta != "" {
+					if deltaType != anthropic.MessageContentDeltaTypeThinkingDelta {
+						if deltaType != "" {
+							if !yield(&anthropic.EventContentBlockStop{
+								Type:  anthropic.EventTypeContentBlockStop,
+								Index: blockIndex,
+							}, nil) {
+								return
+							}
+							blockIndex++
+						}
+						deltaType = anthropic.MessageContentDeltaTypeThinkingDelta
+						if !yield(&anthropic.EventContentBlockStart{
+							Type:  anthropic.EventTypeContentBlockStart,
+							Index: blockIndex,
+							ContentBlock: &anthropic.MessageContent{
+								Type: anthropic.MessageContentTypeThinking,
+							},
+						}, nil) {
+							return
+						}
+					}
+					if !yield(&anthropic.EventContentBlockDelta{
+						Type:  anthropic.EventTypeContentBlockDelta,
+						Index: blockIndex,
+						Delta: &anthropic.MessageContentDelta{
+							Type:     anthropic.MessageContentDeltaTypeThinkingDelta,
+							Thinking: e.Delta,
+						},
+					}, nil) {
+						return
+					}
+				}
+			case *openai.ResponseReasoningTextDoneEvent:
+				// Reasoning text done - no additional action needed
+			case *openai.ResponseReasoningSummaryTextDeltaEvent:
+				// Reasoning summary text delta (treat as thinking)
+				if e.Delta != "" {
+					if deltaType != anthropic.MessageContentDeltaTypeThinkingDelta {
+						if deltaType != "" {
+							if !yield(&anthropic.EventContentBlockStop{
+								Type:  anthropic.EventTypeContentBlockStop,
+								Index: blockIndex,
+							}, nil) {
+								return
+							}
+							blockIndex++
+						}
+						deltaType = anthropic.MessageContentDeltaTypeThinkingDelta
+						if !yield(&anthropic.EventContentBlockStart{
+							Type:  anthropic.EventTypeContentBlockStart,
+							Index: blockIndex,
+							ContentBlock: &anthropic.MessageContent{
+								Type: anthropic.MessageContentTypeThinking,
+							},
+						}, nil) {
+							return
+						}
+					}
+					if !yield(&anthropic.EventContentBlockDelta{
+						Type:  anthropic.EventTypeContentBlockDelta,
+						Index: blockIndex,
+						Delta: &anthropic.MessageContentDelta{
+							Type:     anthropic.MessageContentDeltaTypeThinkingDelta,
+							Thinking: e.Delta,
+						},
+					}, nil) {
+						return
+					}
+				}
+			case *openai.ResponseReasoningSummaryTextDoneEvent:
+				// Reasoning summary done - no additional action needed
+			case *openai.ResponseFunctionCallArgumentsDeltaEvent:
+				// Function call arguments delta
+				if e.Delta != "" {
+					if deltaType != anthropic.MessageContentDeltaTypeInputJSONDelta || (e.ItemID != "" && e.ItemID != toolCallID) {
+						if deltaType != "" {
+							if !yield(&anthropic.EventContentBlockStop{
+								Type:  anthropic.EventTypeContentBlockStop,
+								Index: blockIndex,
+							}, nil) {
+								return
+							}
+							blockIndex++
+						}
+						deltaType = anthropic.MessageContentDeltaTypeInputJSONDelta
+						toolCallID = e.ItemID
+						// Note: We don't have the function name here, it should have been set in OutputItemAdded
+					}
+					if !yield(&anthropic.EventContentBlockDelta{
+						Type:  anthropic.EventTypeContentBlockDelta,
+						Index: blockIndex,
+						Delta: &anthropic.MessageContentDelta{
+							Type:        anthropic.MessageContentDeltaTypeInputJSONDelta,
+							PartialJSON: e.Delta,
+						},
+					}, nil) {
+						return
+					}
+				}
+			case *openai.ResponseFunctionCallArgumentsDoneEvent:
+				// Function call arguments done - no additional action needed
+			case *openai.ResponseCompletedEvent:
+				// Response completed
+				stopReason = convertOpenAIStatusToAnthropicStopReason(e.Response.Status, e.Response.IncompleteDetails)
+				if e.Response.Usage != nil {
+					usage = &anthropic.Usage{
+						InputTokens:  int64(float64(e.Response.Usage.InputTokens) * contextWindowResizeFactor),
+						OutputTokens: int64(float64(e.Response.Usage.OutputTokens) * contextWindowResizeFactor),
+					}
+					if details := e.Response.Usage.InputTokensDetails; details != nil {
+						usage.CacheReadInputTokens = int64(float64(details.CachedTokens) * contextWindowResizeFactor)
+					}
+				}
+			case *openai.ResponseFailedEvent:
+				// Response failed
+				stopReason = anthropic.StopReasonRefusal
+			case *openai.ResponseIncompleteEvent:
+				// Response incomplete
+				if e.Response.IncompleteDetails != nil {
+					switch e.Response.IncompleteDetails.Reason {
+					case openai.ResponseIncompleteReasonMaxOutputTokens:
+						stopReason = anthropic.StopReasonMaxTokens
+					case openai.ResponseIncompleteReasonContentFilter:
+						stopReason = anthropic.StopReasonRefusal
+					default:
+						stopReason = anthropic.StopReasonPauseTurn
+					}
+				} else {
+					stopReason = anthropic.StopReasonPauseTurn
+				}
+			case *openai.ResponseRefusalDeltaEvent:
+				// Refusal delta - treat as text
+				if e.Delta != "" {
+					if deltaType != anthropic.MessageContentDeltaTypeTextDelta {
+						if deltaType != "" {
+							if !yield(&anthropic.EventContentBlockStop{
+								Type:  anthropic.EventTypeContentBlockStop,
+								Index: blockIndex,
+							}, nil) {
+								return
+							}
+							blockIndex++
+						}
+						deltaType = anthropic.MessageContentDeltaTypeTextDelta
+						if !yield(&anthropic.EventContentBlockStart{
+							Type:  anthropic.EventTypeContentBlockStart,
+							Index: blockIndex,
+							ContentBlock: &anthropic.MessageContent{
+								Type: anthropic.MessageContentTypeText,
+							},
+						}, nil) {
+							return
+						}
+					}
+					if !yield(&anthropic.EventContentBlockDelta{
+						Type:  anthropic.EventTypeContentBlockDelta,
+						Index: blockIndex,
+						Delta: &anthropic.MessageContentDelta{
+							Type: anthropic.MessageContentDeltaTypeTextDelta,
+							Text: e.Delta,
+						},
+					}, nil) {
+						return
+					}
+				}
+			case *openai.ResponseErrorEvent:
+				// Error event
+				yield(nil, &openai.Error{
+					Inner: struct {
+						Message string `json:"message"`
+						Type    string `json:"type"`
+						Param   any    `json:"param,omitempty"`
+						Code    string `json:"code"`
+					}{
+						Message: e.Message,
+						Code:    string(e.Code),
+					},
+				})
+				return
+			}
+		}
+		// Close any open content block
+		if deltaType != "" {
+			if !yield(&anthropic.EventContentBlockStop{
+				Type:  anthropic.EventTypeContentBlockStop,
+				Index: blockIndex,
+			}, nil) {
+				return
+			}
+		}
+		// Send message delta and stop
+		delta := &anthropic.Message{}
+		if stopReason != "" {
+			delta.StopReason = lo.ToPtr(stopReason)
+		} else {
+			delta.StopReason = lo.ToPtr(anthropic.StopReasonEndTurn)
+		}
+		if usage != nil {
+			delta.Usage = usage
+		}
+		if !yield(&anthropic.EventMessageDelta{
+			Type:  anthropic.EventTypeMessageDelta,
+			Delta: delta,
+			Usage: usage,
+		}, nil) {
+			return
+		}
+		yield(&anthropic.EventMessageStop{Type: anthropic.EventTypeMessageStop}, nil)
+	}
+}
+
+func convertOpenAIStatusToAnthropicStopReason(
+	status openai.ResponseStatus,
+	incompleteDetails *openai.ResponseIncompleteDetails,
+) anthropic.StopReason {
+	switch status {
+	case openai.ResponseStatusCompleted:
+		return anthropic.StopReasonEndTurn
+	case openai.ResponseStatusIncomplete:
+		if incompleteDetails != nil {
+			switch incompleteDetails.Reason {
+			case openai.ResponseIncompleteReasonMaxOutputTokens:
+				return anthropic.StopReasonMaxTokens
+			case openai.ResponseIncompleteReasonContentFilter:
+				return anthropic.StopReasonRefusal
+			}
+		}
+		return anthropic.StopReasonPauseTurn
+	case openai.ResponseStatusFailed:
+		return anthropic.StopReasonRefusal
+	default:
+		return anthropic.StopReasonEndTurn
+	}
 }
