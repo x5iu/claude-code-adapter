@@ -1,0 +1,129 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: ["Go Test"]
+    types: [completed]
+    branches: ["main"]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: "1.24"
+  BINARY_NAME: claude-code-adapter
+  BUILD_PATH: ./cmd/claude-code-adapter-cli
+  VERSION_FILE: cmd/claude-code-adapter-cli/claude-code-adapter.go
+
+jobs:
+  check-version:
+    name: Check Version
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      should-release: ${{ steps.check.outputs.should-release }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Extract version from source
+        id: version
+        run: |
+          VERSION=$(grep -oP 'Version:\s*"\K[^"]+' ${{ env.VERSION_FILE }})
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Detected version: ${VERSION}"
+
+      - name: Check if tag exists
+        id: check
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if git rev-parse "refs/tags/${VERSION}" >/dev/null 2>&1; then
+            echo "Tag ${VERSION} already exists, skipping release"
+            echo "should-release=false" >> $GITHUB_OUTPUT
+          else
+            echo "Tag ${VERSION} does not exist, will create release"
+            echo "should-release=true" >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    name: Build
+    needs: check-version
+    if: ${{ needs.check-version.outputs.should-release == 'true' }}
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-name: ${{ steps.build.outputs.artifact-name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build binary
+        id: build
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          ARTIFACT_NAME="${{ env.BINARY_NAME }}-linux-amd64-${VERSION}"
+
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+            -ldflags="-s -w -X main.version=${VERSION}" \
+            -o "${ARTIFACT_NAME}" \
+            ${{ env.BUILD_PATH }}
+
+          file "${ARTIFACT_NAME}"
+          ls -lh "${ARTIFACT_NAME}"
+          echo "artifact-name=${ARTIFACT_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.build.outputs.artifact-name }}
+          path: ${{ steps.build.outputs.artifact-name }}
+          retention-days: 1
+
+  release:
+    name: Create Release
+    needs: [check-version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact-name }}
+
+      - name: Create tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          ARTIFACT_NAME="${{ needs.build.outputs.artifact-name }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git tag -a "${VERSION}" -m "Release ${VERSION}"
+          git push origin "${VERSION}"
+
+          gh release create "${VERSION}" \
+            --title "Release ${VERSION}" \
+            --generate-notes \
+            "${ARTIFACT_NAME}"
+
+          echo "Created release ${VERSION}"
